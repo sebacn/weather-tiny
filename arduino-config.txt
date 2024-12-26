@@ -1,0 +1,20 @@
+Board: "ESP32 Dev Module"
+Port: "COM8"
+Get Board Info
+CPU Frequency: "240MHz (WiFi/BT)"
+Core Debug Level: "None"
+Erase All Flash Before Sketch Upload: "Disabled"
+Events Run On: "Core 1"
+Flash Frequency: "80MHz"
+Flash Mode: "QIO"
+Flash Size: "4MB (32Mb)"
+JTAG Adapter: "Disabled"
+Arduino Runs On: "Core 1"
+Partition Scheme: "Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)"
+PSRAM: "Disabled"
+Upload Speed: "921600"
+
+Board: esp32 2.0.17 https://github.com/espressif/arduino-esp32
+Lib: WiFiManager 2.0.17 https://github.com/tzapu/WiFiManager
+Lib: ArduinoJson 7.2.0 https://arduinojson.org/?utm_source=meta&utm_medium=library.properties
+Lib: Preferences 2.1.0 https://github.com/vshymanskyy/Preferences
