@@ -78,9 +78,13 @@ ApiKeys apiKeys;
 DNSServer dnsServer;
 //AsyncWebServer server(80);
 Preferences preferences;
+//flag for saving data
+bool shouldSaveConfig = false;
+bool configOk = false;
 
 int cached_MODE = 0;
 int curr_loc = 0;
+int SLEEP_INTERVAL_MIN;
 
 struct WeatherRequest weather_request;
 struct AirQualityRequest airquality_request;
@@ -119,8 +123,16 @@ T nested_value_or_default(JsonObject parent_jobj, String key, String nested_key,
     }
 }
 
-void dbgPrintln(String _str = "") {
-    Serial.println(_str == ""? "" : "=== DBG: " + _str);
+String dbgPrintln(String _str = "") {
+    String ret = _str == ""? "" : "=== DBG: " + _str;
+    Serial.println(ret);
+    return ret + "\n";
+}
+
+//callback notifying us of the need to save config
+void saveConfigCallback () {
+  dbgPrintln("Should save config");
+  shouldSaveConfig = true;
 }
 
 void update_header_view(View& view, bool data_updated) {
@@ -497,10 +509,7 @@ void wakeup_reason() {
             }
         break;
     }
-
-    
 }
-
 
 void enable_timed_sleep(int interval_minutes) {
     // sleep and wake up round minutes, ex every 15 mins
@@ -554,40 +563,6 @@ void disconnect_from_wifi() {
     WiFi.mode(WIFI_OFF);
 }
 
-/*
-String create_validation_message(bool valid_wifi, bool valid_location_1, bool valid_location_2) {
-    String wifi_error_msg = "";
-    String location_1_error_msg = "";
-    String location_2_error_msg = "";
-        
-    if (!valid_wifi) {
-        wifi_error_msg = "Missing WIFI credentials. Please provide SSID and password.\n";
-    }        
-    if (!valid_location_1) {
-        location_1_error_msg = "Invalid location 1. Please provide name and postition.";
-    }
-    if (!valid_location_2) {
-        location_2_error_msg = "Incomplete location 2 data. Location will be omitted.";
-    }
-    String message_result = "";
-    String message_color;
-
-    if (!valid_wifi || !valid_location_1) {
-        message_result = "in";  // add prefix for valid
-        message_color = "red";
-    } else {
-        message_color = "green";
-    }
-    String response_msg = String("<h1>Weather Station Configuration</h1><br><br>") +
-    String("<h2 style=\"color:") + message_color + String("\">Configuration is ") + message_result + String("valid.</h2><br>") +
-    String("<h3>") + wifi_error_msg + String("</h3><br>") +
-    String("<h3>") + location_1_error_msg + String("</h3><br>") +
-    String("<h3>") + location_2_error_msg + String("</h3><br>");
-        
-    return response_msg;
-}
-*/
-
 void read_config_from_memory() {
 
     dbgPrintln("Read config from memory...");
@@ -608,6 +583,8 @@ void read_config_from_memory() {
 
     location_cnt = preferences.getInt("locations");  // global variable
     dbgPrintln("Locations: " + String(location_cnt));
+
+    SLEEP_INTERVAL_MIN = preferences.getInt("SLEEP_MIN");
 
     location[0].name = preferences.getString("loc1", "");
     location[0].lat = preferences.getFloat("lat1", 0.0f);
@@ -655,6 +632,8 @@ void save_config_to_memory() {
 
     dbgPrintln("Locations: " + String(location_cnt));
     preferences.putInt("locations", location_cnt);  // global variable
+
+    preferences.putInt("SLEEP_MIN", SLEEP_INTERVAL_MIN); 
 
     location[0].print();
     preferences.putString("loc1", location[0].name);
@@ -710,6 +689,7 @@ void run_config_server() {
     WiFiManagerParameter parmWaqiKey("parmWaqiKey", "Waqi key", apiKeys.WAQI_KEY.c_str(), 50);
     WiFiManagerParameter parmOpenweatherKey("parmOpenweatherKey", "Openweather key", apiKeys.OPENWEATHER_KEY.c_str(), 40);
     WiFiManagerParameter parmTimezdbKey("parmTimezdbKey", "Timezdb key", apiKeys.TIMEZDB_KEY.c_str(), 20);
+    WiFiManagerParameter parmSleepInterval("parmSleepInterval", "Sleep interval (5-60 sec)", String(SLEEP_INTERVAL_MIN).c_str(), 20);
 
     WiFiManager wm;
 
@@ -719,19 +699,21 @@ void run_config_server() {
     wm.addParameter(&parmWaqiKey);
     wm.addParameter(&parmOpenweatherKey);
     wm.addParameter(&parmTimezdbKey);
+    wm.addParameter(&parmSleepInterval);
 
     //wm.setTimeout(120);
     wm.setConfigPortalTimeout(60*5); //5 min
+    wm.setSaveConfigCallback(saveConfigCallback);
 
     bool res = wm.startConfigPortal(network.c_str(), pass.c_str());
 
-    if (!res) {
+    if (!res && !configOk) {
 
         dbgPrintln("Config: WiFi timeout..");
 
         display.fillScreen(GxEPD_WHITE);
         display.setFont(&Cousine_Regular6pt7b);
-        print_text(0, 5, String("Wifi connection timeout..\nPower off"));        
+        print_text(0, 5, String("Wifi connection timeout..\nConfig validation failed..\nPower off"));        
         display.update();
         delay(2000);
 
@@ -746,7 +728,7 @@ void run_config_server() {
     } 
     else 
     {
-        dbgPrintln("Config: WiFi connect Ok, restart to validation mode..");
+        dbgPrintln("Config: WiFi manager exit..");
 
         display.fillScreen(GxEPD_WHITE);
         display.setFont(&Cousine_Regular6pt7b);
@@ -754,29 +736,34 @@ void run_config_server() {
         display.update();
         delay(2000);
 
-        dbgPrintln("Config: save config..");
+        if (shouldSaveConfig)
+        {
+            dbgPrintln("Config: WiFi manager save config..");
 
-        wifi.pass = wm.getWiFiPass();
-        wifi.ssid = wm.getWiFiSSID();
+            wifi.pass = wm.getWiFiPass();
+            wifi.ssid = wm.getWiFiSSID();
 
-        location_cnt = 1;
-        location[0].name = String(parmLocation1.getValue());
-        location[1].name = String(parmLocation2.getValue());
-        
-        if (location[1].name != "") {
-            location_cnt = 2;
-        }
+            location_cnt = 1;
+            location[0].name = String(parmLocation1.getValue());
+            location[1].name = String(parmLocation2.getValue());
+            
+            if (location[1].name != "") {
+                location_cnt = 2;
+            }
 
-        apiKeys.POSITIONSTACK_KEY = String(parmPositionstackKey.getValue());
-        apiKeys.WAQI_KEY = String(parmWaqiKey.getValue());
-        apiKeys.OPENWEATHER_KEY = String(parmOpenweatherKey.getValue());
-        apiKeys.TIMEZDB_KEY = String(parmTimezdbKey.getValue());
-        
-        save_config_to_memory();
+            apiKeys.POSITIONSTACK_KEY = String(parmPositionstackKey.getValue());
+            apiKeys.WAQI_KEY = String(parmWaqiKey.getValue());
+            apiKeys.OPENWEATHER_KEY = String(parmOpenweatherKey.getValue());
+            apiKeys.TIMEZDB_KEY = String(parmTimezdbKey.getValue());
+
+            SLEEP_INTERVAL_MIN = atoi(parmSleepInterval.getValue());
+            
+            save_config_to_memory();
+        }        
 
         set_mode(VALIDATING_MODE);
 
-        print_text(0, 35, String("Restarting.."));
+        print_text(0, 35, String("Restarting to validation mode.."));
         display.update();
         
         delay(3000);
@@ -797,6 +784,8 @@ void run_validating_mode() {
     display_validating_mode();
     display.update();
     delay(2000);
+
+    configOk = false;
     
     if (connect_to_wifi()) {
 
@@ -826,6 +815,11 @@ void run_validating_mode() {
           keyErrMsg += ",TIMEZDB_KEY";
         }
 
+        if (SLEEP_INTERVAL_MIN < 5 || SLEEP_INTERVAL_MIN > 60)
+        {
+          keyErrMsg += ",SLEEP_INTERVAL_MIN";
+        }
+
         dbgPrintln("Validate key, missing keys: " + (keyErrMsg == ""? "No" : keyErrMsg));
 
         if (keyErrMsg != "")
@@ -836,7 +830,6 @@ void run_validating_mode() {
 
           set_mode(CONFIG_MODE);
           delay(10000);
-
           ESP.restart();
           return;
         }
@@ -862,32 +855,82 @@ void run_validating_mode() {
                 }
                 else
                 {
-                    dbgPrintln("Validate: location " + location[idx].name + " fetch FAILED");
+                    keyErrMsg += dbgPrintln("Validate: location " + location[idx].name + " fetch FAILED");
                     checkFailed = true;
                 }              
             } //for
+
+            if (!checkFailed)
+            {
+                datetime_request.api_key = apiKeys.TIMEZDB_KEY;
+                datetime_request.make_path(location[0]);
+                datetime_request.handler = datetime_handler;
+
+                weather_request.api_key = apiKeys.OPENWEATHER_KEY;
+                weather_request.make_path(location[0]);
+                weather_request.handler = weather_handler;
+
+                airquality_request.api_key = apiKeys.WAQI_KEY;
+                airquality_request.make_path(location[0]);
+                airquality_request.handler = air_quality_handler;
+
+                bool is_time_fetched = http_request_data(client, datetime_request);
+                bool is_weather_fetched = http_request_data(client, weather_request);
+                bool is_aq_fetched = http_request_data(client, airquality_request);
+
+                if (!is_time_fetched)
+                {
+                    keyErrMsg += dbgPrintln("Time fetch error\nTIMEZDB_KEY not valid");
+                    checkFailed = true;
+                }
+
+                if (!is_weather_fetched)
+                {
+                    keyErrMsg += dbgPrintln("Weather fetch error\nOPENWEATHER_KEY not valid");
+                    checkFailed = true;
+                }
+
+                if (!is_aq_fetched)
+                {
+                    keyErrMsg += dbgPrintln("Airquality fetch error\nWAQI_KEY not valid");
+                    checkFailed = true;
+                }
+            }            
         }
         else
         {
-            dbgPrintln("Validate: no locations configured to fetch");
+            keyErrMsg += dbgPrintln("Validate: no locations configured to fetch");
             checkFailed = true;
         }
 
         if (checkFailed)
         {
-          set_mode_and_reboot(CONFIG_MODE);
+          display.setFont(&Cousine_Regular6pt7b);
+          print_text(0, 45, "Validation failed:\n" + keyErrMsg);
+          display.update();
+
+          set_mode(CONFIG_MODE);
+          delay(15000);
+          ESP.restart();
           return;
         } 
     }
     else
     {
-      dbgPrintln("Wifi connect failed, reboot to config...");
-      set_mode_and_reboot(CONFIG_MODE);
+      dbgPrintln("Wifi connection failed, reboot to config...");
+
+      display.setFont(&Cousine_Regular6pt7b);
+      print_text(0, 45, "Wifi connection failed\nReboot to config...");
+      display.update();
+
+      set_mode(CONFIG_MODE);
+      delay(15000);
+      ESP.restart();
     }
 
+    configOk = true;
     save_config_to_memory();
     set_mode_and_reboot(OPERATING_MODE);
-    
 }
 
 
@@ -940,10 +983,12 @@ void run_operating_mode() {
 void set_mode(int mode) {
 
     dbgPrintln("Set mode " + String(mode));
+    dbgPrintln("Config OK: " + String(configOk));
 
     preferences.begin(MEMORY_ID, false);
-    preferences.putInt("mode", mode);
-    preferences.end();
+    preferences.putInt("mode", mode);    
+    preferences.putBool("configOk", configOk);  // global variable
+    preferences.end();    
 }
 
 
@@ -954,13 +999,21 @@ void set_mode_and_reboot(int mode) {
 
 
 int get_mode(bool cached_mode) {
+
+    dbgPrintln("Get mode " + String(cached_mode));
+
     if (cached_mode) {
         return cached_MODE;
     }
+
     preferences.begin(MEMORY_ID, false);
     int mode = preferences.getInt("mode", NOT_SET_MODE);
-    cached_MODE = mode;
+    configOk = preferences.getBool("configOk", false);  // global variable
+    cached_MODE = mode;    
     preferences.end();
+
+    dbgPrintln("Config OK: " + String(configOk));
+
     return mode;
 }
 

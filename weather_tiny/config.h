@@ -3,9 +3,6 @@
 
 #include "api_keys.h"
 
-#define SLEEP_INTERVAL_MIN 15
-
-
 struct Location {
     String name = "";
     float lat = 0.0f;
