@@ -136,7 +136,6 @@ void print_text_x(int x, String text) {
     print_text(x, display.getCursorY(), text);
 }
 
-
 void init_display() {
     Serial.print("init_display...");
     SPI.begin(SPI_CLK, SPI_MISO, SPI_MOSI, ELINK_SS);
@@ -149,12 +148,13 @@ void init_display() {
 }
 
 
-void display_config_mode(String network, String pass, String ip) {
+void display_config_mode(String network, String pass, String ip, String exparam = "") {
     display.setFont(&monofonto18pt7b);
     print_text(50, 0, "Welcome!");
     display.setFont(&Cousine_Regular6pt7b);
     print_text(0, 8, String("Connect to weather station...") + "\nSSID: " + network + "\nPass: " + pass);
-    // print_text(0, 65, String("and configure... \n") + "http://" + ip + "/config");
+    print_text(0, 65, String("URL : http://") + ip +"\nSTATUS : " + exparam);
+    //print_text(0, 65, String("and configure... \n") + "http://" + ip + "config");
 }
 
 
@@ -172,7 +172,9 @@ void display_header(View& view) {
     print_text(0, -3, view.location);
     print_text(SCREEN_WIDTH - get_text_width(view.datetime)-3, -12, view.datetime);
     int batt_x = SCREEN_WIDTH - get_text_width(view.datetime) - 33;
-    display_battery_icon(batt_x, 3, display, view.battery_percent);
+
+    batt_x = SCREEN_WIDTH - 33;
+    display_battery_icon(batt_x, 21, display, view.battery_percent); //(batt_x, 3, display, view.battery_percent);
     // display_battery_percentage
     // print_text(batt_x, 3, view.battery_percent_display);  
 }

@@ -5,7 +5,7 @@
 #include <time.h>
 #include "fmt.h"
 #include "config.h"
-
+//#include "api_keys.h"
 
 struct Request;
 typedef bool (*ResponseHandler) (WiFiClient& resp_stream, Request request);
@@ -45,7 +45,7 @@ struct TimeZoneDbRequest: Request {
 
     explicit TimeZoneDbRequest(): Request() {
         this->server = "api.timezonedb.com";
-        this->api_key = TIMEZDB_KEY;
+        //this->api_key = apiKeys.TIMEZDB_KEY;
     }
 
     explicit TimeZoneDbRequest(String server, String api_key) {
@@ -78,7 +78,7 @@ struct AirQualityRequest: Request {
     
     explicit AirQualityRequest(): Request() {
         this->server = "api.waqi.info";
-        this->api_key = WAQI_KEY;
+        //this->api_key = apiKeys.WAQI_KEY;
     } 
 
     explicit AirQualityRequest(String server, String api_key) {
@@ -111,10 +111,10 @@ struct GeocodingNominatimResponse {
 
 struct GeocodingNominatimRequest: Request {
     String name = "";
-    
+
     explicit GeocodingNominatimRequest(): Request() {
         this->server = "api.positionstack.com";
-        this->api_key = POSITIONSTACK_KEY;
+        //this->api_key = apiKeys.POSITIONSTACK_KEY;
     }
 
     explicit GeocodingNominatimRequest(String server, String name) {
@@ -241,7 +241,7 @@ struct WeatherRequest: Request {
    
     explicit WeatherRequest(): Request() {
         this->server = "api.openweathermap.org";
-        this->api_key = OPENWEATHER_KEY;
+        this->api_key = apiKeys.OPENWEATHER_KEY;
     }
     
     explicit WeatherRequest(String server, String api_key) {

@@ -4,8 +4,8 @@
 #include <SPI.h>
 #include <GxEPD.h>
 
-#include <GxGDE0213B72B/GxGDE0213B72B.h> // 2.13" b/w
-// #include <GxDEPG0213BN/GxDEPG0213BN.h>  // 2.13" b/w newer panel
+// #include <GxGDE0213B72B/GxGDE0213B72B.h> // 2.13" b/w
+#include <GxDEPG0213BN/GxDEPG0213BN.h>  // 2.13" b/w newer panel
 
 #include <GxIO/GxIO_SPI/GxIO_SPI.h>
 #include <GxIO/GxIO.h>
@@ -34,10 +34,9 @@ GxEPD_Class display(io, ELINK_RESET, ELINK_BUSY);
 #include <ArduinoJson.h>
 #include <time.h>
 #include <DNSServer.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
 #include <rom/rtc.h> 
 #include <Preferences.h>
+#include <WiFiManager.h> 
 
 #define ADC_PIN 35
 #define WAKE_BTN_PIN 39
@@ -46,12 +45,12 @@ GxEPD_Class display(io, ELINK_RESET, ELINK_BUSY);
 // FONTS ----------------------------
 // ----------------------------------
 
-#include <Fonts/Monofonto10pt.h>
-#include <Fonts/Monofonto12pt.h>
-#include <Fonts/Monofonto18pt.h>
-#include <Fonts/MeteoCons8pt.h>
-#include <Fonts/MeteoCons10pt.h>
-#include <Fonts/Cousine6pt.h>
+#include "src/Adafruit_GFX_Library/Fonts/Monofonto10pt.h"
+#include "src/Adafruit_GFX_Library/Fonts/Monofonto12pt.h"
+#include "src/Adafruit_GFX_Library/Fonts/Monofonto18pt.h"
+#include "src/Adafruit_GFX_Library/Fonts/MeteoCons8pt.h"
+#include "src/Adafruit_GFX_Library/Fonts/MeteoCons10pt.h"
+#include "src/Adafruit_GFX_Library/Fonts/Cousine6pt.h"
 
 // ----------------------------------
 // LOCAL FILES AND DECLARATIONS -----
@@ -61,6 +60,8 @@ GxEPD_Class display(io, ELINK_RESET, ELINK_BUSY);
 #include "i18n.h"
 #include "config.h"
 #include "units.h"
+#include "api_keys.h"
+ApiKeys apiKeys;
 #include "api_request.h"
 #include "display.h"
 #include "view.h"
@@ -75,7 +76,7 @@ GxEPD_Class display(io, ELINK_RESET, ELINK_BUSY);
 
 // http server for obtaining configuration
 DNSServer dnsServer;
-AsyncWebServer server(80);
+//AsyncWebServer server(80);
 Preferences preferences;
 
 int cached_MODE = 0;
@@ -118,9 +119,12 @@ T nested_value_or_default(JsonObject parent_jobj, String key, String nested_key,
     }
 }
 
+void dbgPrintln(String _str = "") {
+    Serial.println(_str == ""? "" : "=== DBG: " + _str);
+}
 
 void update_header_view(View& view, bool data_updated) {
-    view.location = location[curr_loc].name.substring(0,7);
+    view.location = location[curr_loc].name.substring(0,10);
     view.battery_percent = get_battery_percent(analogRead(ADC_PIN));
     int percent_display = view.battery_percent;
     
@@ -182,7 +186,7 @@ void update_weather_view(View& view, bool data_updated) {
 void update_location(GeocodingNominatimResponse& location_resp, JsonObject& jobj) {
     location_resp.lat = jobj["data"][0]["latitude"].as<float>();
     location_resp.lon = jobj["data"][0]["longitude"].as<float>();
-    location_resp.label = String(jobj["data"][0]["label"].as<char*>()).substring(0, 25);
+    location_resp.label = String(jobj["data"][0]["label"].as<String>()).substring(0, 25); //char*
 }
 
 
@@ -205,8 +209,8 @@ void update_current_weather(WeatherResponseHourly& hourly, JsonObject& root) {
     hourly.clouds = root["current"]["clouds"].as<int>();
     hourly.wind_bft = wind_ms2bft(root["current"]["wind_speed"].as<float>());
     hourly.wind_deg = root["current"]["wind_deg"].as<int>();
-    hourly.icon = String(root["current"]["weather"][0]["icon"].as<char*>()).substring(0, 2);
-    hourly.descr = root["current"]["weather"][0]["description"].as<char*>();
+    hourly.icon = String(root["current"]["weather"][0]["icon"].as<String>()).substring(0, 2); //char*
+    hourly.descr = root["current"]["weather"][0]["description"].as<String>(); //char*
     hourly.pop = round(root["hourly"][1]["pop"].as<float>() * 100);
     hourly.snow = value_or_default(root["current"], "snow", 0.0f);
     hourly.rain = value_or_default(root["current"], "rain", 0.0f);
@@ -231,7 +235,7 @@ void update_percip_forecast(WeatherResponseRainHourly& percip, JsonObject& root,
     percip.snow = nested_value_or_default(root["hourly"][hour_offset], "snow", "1h", 0.0f);
     percip.rain = nested_value_or_default(root["hourly"][hour_offset], "rain", "1h", 0.0f);
     percip.feel_t = kelv2cels1(root["hourly"][hour_offset]["feels_like"].as<float>());
-    percip.icon = String(root["hourly"][hour_offset]["weather"][0]["icon"].as<char*>()).substring(0, 2);
+    percip.icon = String(root["hourly"][hour_offset]["weather"][0]["icon"].as<String>()).substring(0, 2); //char*
 }
 
 
@@ -305,7 +309,7 @@ bool air_quality_handler(WiFiClient& resp_stream, Request request) {
     if (api_resp.isNull()) {
         return false;
     }
-    if (!String(api_resp["status"].as<char*>()).equals("ok")) {
+    if (!String(api_resp["status"].as<String>()).equals("ok")) { //char*
         return false;
     }
     airquality_request = AirQualityRequest(request);
@@ -333,25 +337,25 @@ DynamicJsonDocument deserialize(WiFiClient& resp_stream, const int size, bool is
         int end = stream_as_string.lastIndexOf('}');
         Serial.print("\nEmbeded json algorithm obtained document...\n");
         String trimmed_json = stream_as_string.substring(begin, end+1);
-        Serial.println(trimmed_json);
+        dbgPrintln(trimmed_json);
         error = deserializeJson(doc, trimmed_json);
     } else {
         error = deserializeJson(doc, resp_stream);
     }
     if (error) {
         Serial.print(F("\ndeserialization error:"));
-        Serial.println(error.c_str());
+        dbgPrintln(error.c_str());
     } else {
-        Serial.println("deserialized.");
+        dbgPrintln("deserialized.");
     }
-    Serial.println("");
+    dbgPrintln("");
     return doc;
 }
 
 
 int get_battery_percent(int adc_value) {
     float voltage = adc_value / 4095.0 * 7.5;
-    Serial.println("Battery voltage ~" + String(voltage) + "V");
+    dbgPrintln("Battery voltage ~" + String(voltage) + "V");
     if (voltage > 4.35) {
         return 101;  // charging / DC powered
     }
@@ -362,7 +366,7 @@ int get_battery_percent(int adc_value) {
         return 1;
     }
     int percent = (int)((voltage - 3.3)/(4.1 - 3.3)*99) + 1;
-    Serial.println("Battery percent: " + String(percent) + "%");
+    dbgPrintln("Battery percent: " + String(percent) + "%");
     return percent;
 }
 
@@ -380,7 +384,7 @@ bool http_request_data(WiFiClient& client, Request request, unsigned int retry=3
         int http_code = http.GET();
         
         if(http_code == HTTP_CODE_OK) {
-            Serial.println("\nHTTP connection established");
+            dbgPrintln("\nHTTP connection established");
             if (!request.handler(http.getStream(), request)) {
                 ret_val = false;
             }
@@ -403,7 +407,7 @@ bool connect_to_wifi(unsigned int retry=5) {
     WiFi.setAutoReconnect(true);
 
     while(wifi_conn_status != WL_CONNECTED && retry--) {
-        Serial.println("\nConnecting to: " + wifi.ssid + " [retry left: " + retry +"]");
+        dbgPrintln("\nConnecting to: " + wifi.ssid + " [retry left: " + retry +"]");
         unsigned long start = millis();
         wifi_conn_status = WiFi.begin(wifi.ssid.c_str(), wifi.pass.c_str());
         
@@ -416,10 +420,10 @@ bool connect_to_wifi(unsigned int retry=5) {
             wifi_conn_status = WiFi.status();
             
             if (wifi_conn_status == WL_CONNECTED) {
-                Serial.println("Wifi connected. IP: " + WiFi.localIP().toString());    
+                dbgPrintln("Wifi connected. IP: " + WiFi.localIP().toString());    
                 break;
             } else if(wifi_conn_status == WL_CONNECT_FAILED) {
-                Serial.println("Wifi failed to connect.");
+                dbgPrintln("Wifi failed to connect.");
                 break;
             }
         }
@@ -456,12 +460,18 @@ void print_reset_reason(RESET_REASON reason) {
 void wakeup_reason() {
     esp_sleep_wakeup_cause_t wakeup_reason;
     wakeup_reason = esp_sleep_get_wakeup_cause();
+
+    Serial.print("CPU0 reset reason: ");
+    print_reset_reason(rtc_get_reset_reason(0));
+    Serial.print(",  CPU1 reset reason: ");
+    print_reset_reason(rtc_get_reset_reason(1));
+    dbgPrintln();
     
     switch(wakeup_reason){
-        Serial.println("Location variable: " + String(curr_loc));
+        dbgPrintln("Location variable: " + String(curr_loc));
         
         case ESP_SLEEP_WAKEUP_EXT0 : 
-            Serial.println("\nWakeup by ext signal RTC_IO -> GPIO39"); 
+            dbgPrintln("\nWakeup by ext signal RTC_IO -> GPIO39"); 
             if (get_mode() == OPERATING_MODE) {
                 // Toggle between 2 screens caused by button press WAKE_BTN_PIN
                 if (location_cnt > 1) {
@@ -473,20 +483,22 @@ void wakeup_reason() {
             break;
             
         case ESP_SLEEP_WAKEUP_EXT1 : 
-            Serial.println("Wakeup by ext signal RTC_CNTL -> GPIO34"); 
+            dbgPrintln("Wakeup by ext signal RTC_CNTL -> GPIO34"); 
             set_mode_and_reboot(CONFIG_MODE);
             break;
             
-        case ESP_SLEEP_WAKEUP_TIMER : Serial.println("Wakeup by timer"); break;
-        case ESP_SLEEP_WAKEUP_TOUCHPAD : Serial.println("Wakeup by touchpad"); break;
-        case ESP_SLEEP_WAKEUP_ULP : Serial.println("Wakeup by ULP program"); break;
-        default : Serial.printf("Wakeup not caused by deep sleep: %d\n", wakeup_reason); break;
+        case ESP_SLEEP_WAKEUP_TIMER : dbgPrintln("Wakeup by timer"); break;
+        case ESP_SLEEP_WAKEUP_TOUCHPAD : dbgPrintln("Wakeup by touchpad"); break;
+        case ESP_SLEEP_WAKEUP_ULP : dbgPrintln("Wakeup by ULP program"); break;
+        default : Serial.printf("Wakeup not caused by deep sleep: %d\n", wakeup_reason); 
+            if (rtc_get_reset_reason(0) == POWERON_RESET && rtc_get_reset_reason(1) == EXT_CPU_RESET)
+            {
+                set_mode_and_reboot(CONFIG_MODE);
+            }
+        break;
     }
-    Serial.print("CPU0 reset reason: ");
-    print_reset_reason(rtc_get_reset_reason(0));
-    Serial.print(",  CPU1 reset reason: ");
-    print_reset_reason(rtc_get_reset_reason(1));
-    Serial.println();
+
+    
 }
 
 
@@ -542,39 +554,7 @@ void disconnect_from_wifi() {
     WiFi.mode(WIFI_OFF);
 }
 
-
-void http_resource_not_found(AsyncWebServerRequest *request) {
-    request->send(404, "text/plain", "Not found");
-}
-
-
-String get_param(AsyncWebServerRequest *request, String name) {
-    String value;
-    if (request->hasParam(name, true)) {
-        value = request->getParam(name, true)->value();
-        return value;
-    }
-    return "";
-}
-
-
-String get_param(AsyncWebServerRequest *request, String name, bool& exists) {
-    String value;
-    if (request->hasParam(name, true)) {
-        value = request->getParam(name, true)->value();
-
-        if (value.equals("")) {
-            exists = false;
-            return "";        
-        }
-        exists = exists && true;
-        return value;
-    }
-    exists = false;
-    return "";
-}
-
-
+/*
 String create_validation_message(bool valid_wifi, bool valid_location_1, bool valid_location_2) {
     String wifi_error_msg = "";
     String location_1_error_msg = "";
@@ -606,18 +586,28 @@ String create_validation_message(bool valid_wifi, bool valid_location_1, bool va
         
     return response_msg;
 }
-
+*/
 
 void read_config_from_memory() {
-    Serial.println("Read config from memory...");
+
+    dbgPrintln("Read config from memory...");
     preferences.begin(MEMORY_ID, true);  // first param true means 'read only'
 
     wifi.ssid = preferences.getString("ssid");
     wifi.pass = preferences.getString("pass");
-    wifi.print();
+
+    apiKeys.POSITIONSTACK_KEY = preferences.getString("POSSTACK_KEY");
+    apiKeys.WAQI_KEY = preferences.getString("WAQI_KEY");
+    apiKeys.OPENWEATHER_KEY = preferences.getString("OPENWEATHER_KEY");
+    apiKeys.TIMEZDB_KEY = preferences.getString("TIMEZDB_KEY");
+
+    dbgPrintln("POSITIONSTACK_KEY: " + apiKeys.POSITIONSTACK_KEY);
+    dbgPrintln("WAQI_KEY: "          + apiKeys.WAQI_KEY);
+    dbgPrintln("OPENWEATHER_KEY: "   + apiKeys.OPENWEATHER_KEY);
+    dbgPrintln("TIMEZDB_KEY: "       + apiKeys.TIMEZDB_KEY);
 
     location_cnt = preferences.getInt("locations");  // global variable
-    Serial.println("Locations: " + String(location_cnt));
+    dbgPrintln("Locations: " + String(location_cnt));
 
     location[0].name = preferences.getString("loc1", "");
     location[0].lat = preferences.getFloat("lat1", 0.0f);
@@ -631,11 +621,13 @@ void read_config_from_memory() {
         location[1].print();
     }
     preferences.end();
+
+    wifi.print();
 }
 
 
 int read_location_from_memory() {
-    Serial.println("Read current location from memory...");
+    dbgPrintln("Read current location from memory...");
     preferences.begin(LOC_MEMORY_ID, true);  // first param true means 'read only'
     int location_id = preferences.getInt("curr_loc");
     preferences.end();
@@ -644,15 +636,24 @@ int read_location_from_memory() {
 
 
 void save_config_to_memory() {
-    Serial.println("Save config to memory.");
+    dbgPrintln("Save config to memory.");
     
     preferences.begin(MEMORY_ID, false);  // first param false means 'read/write'
 
-    wifi.print();
     preferences.putString("ssid", wifi.ssid);
     preferences.putString("pass", wifi.pass);
 
-    Serial.println("Locations: " + String(location_cnt));
+    preferences.putString("POSSTACK_KEY", apiKeys.POSITIONSTACK_KEY);
+    preferences.putString("WAQI_KEY", apiKeys.WAQI_KEY);
+    preferences.putString("OPENWEATHER_KEY", apiKeys.OPENWEATHER_KEY);
+    preferences.putString("TIMEZDB_KEY", apiKeys.TIMEZDB_KEY);
+
+    dbgPrintln("POSITIONSTACK_KEY: " + apiKeys.POSITIONSTACK_KEY);
+    dbgPrintln("WAQI_KEY: "          + apiKeys.WAQI_KEY);
+    dbgPrintln("OPENWEATHER_KEY: "   + apiKeys.OPENWEATHER_KEY);
+    dbgPrintln("TIMEZDB_KEY: "       + apiKeys.TIMEZDB_KEY);
+
+    dbgPrintln("Locations: " + String(location_cnt));
     preferences.putInt("locations", location_cnt);  // global variable
 
     location[0].print();
@@ -666,156 +667,232 @@ void save_config_to_memory() {
         preferences.putFloat("lat2", location[1].lat);
         preferences.putFloat("lon2", location[1].lon);
     }
+
     preferences.end();
+
+    delay(1000);
+
+    wifi.print();
 }
 
 
 void save_location_to_memory(int location_id) {
-    Serial.println("Save current location to memory...");
+    dbgPrintln("Save current location to memory...");
     preferences.begin(LOC_MEMORY_ID, false);
     preferences.putInt("curr_loc", location_id);
     preferences.end();
 }
 
-
-class CaptiveRequestHandler : public AsyncWebHandler {
-public:
-    CaptiveRequestHandler() {}
-    virtual ~CaptiveRequestHandler() {}
-
-    bool canHandle(AsyncWebServerRequest *request){
-        return true;
-    }
-
-    void handleRequest(AsyncWebServerRequest *request) {
-        AsyncResponseStream *response = request->beginResponseStream("text/html");
-        if (request->method() == 1) {  // enum: HTTP_GET
-            const char *request_form =
-            "<h1>Weather Station Configuration</h1><br><br>"
-            "<h2>"
-            "<form action=\"/config\" method=\"post\">"
-            "<label for=\"ssid\">Wifi SSID</label><br>"
-            "<input type=\"text\" id=\"ssid\" name=\"ssid\"><br>"
-            "<label for=\"pass\">Wifi Password:</label><br>"
-            "<input type=\"password\" id=\"pass\" name=\"pass\"><br>"
-            "<br>"
-            "<br>"
-            "<label for=\"loc1\">Location 1 Name</label><br>"
-            "<input type=\"text\" id=\"loc1\" name=\"loc1\"><br>"
-            "<br>"
-            "<label for=\"loc1\">Location 2 Name</label><br>"
-            "<input type=\"text\" id=\"loc2\" name=\"loc2\"><br>"
-            "<br>"
-            "<input type=\"submit\" value=\"OK\" style=\"width: 100px; height: 45px; font-size: 16pt\">"
-            "</form>"
-            "</h2>";
-            request->send(200, "text/html", request_form);
-        } else {
-            request->send(404, "text/html", "Invalid request method. Page not found");
-        }
-    }
-};
-
-
 void run_config_server() {
-    String network = "weather-wifi";
-    String pass = String(abs((int)esp_random())).substring(0, 4) + "0000";
-    WiFi.softAP(network.c_str(), pass.c_str());
-    //WiFi.softAP(network.c_str());  // <- without password
     
-    String ip = WiFi.softAPIP().toString();
+    String network = "ttgo-t5-2.13-weather-wifi";
+    String pass = String(abs((int)esp_random())).substring(0, 4) + "0000";
+    //WiFi.softAP(network.c_str(), pass.c_str());
+    //WiFi.softAP(network.c_str());  // <- without password
+
+    read_config_from_memory();
+
+    IPAddress localIp(192, 168, 4, 1);
+    IPAddress localMask(255, 255, 255, 0);
+    WiFi.softAPConfig(localIp, localIp, localMask);
+
     dnsServer.start(53, "*", WiFi.softAPIP());
     
-    Serial.printf("\nStart config server on ssid: %s, pass: %s, ip: %s \n\n", network.c_str(), pass.c_str(), ip.c_str());
-    display_config_mode(network, pass, ip);
-    
+    Serial.printf("\nStart config server on ssid: %s, pass: %s, ip: %s \n\n", network.c_str(), pass.c_str(), WiFi.softAPIP().toString());
+    display_config_mode(network, pass, WiFi.softAPIP().toString(), "WiFi Configuration..");
     display.update();
 
-    server.on("/config", HTTP_POST, [](AsyncWebServerRequest *request){
-        bool valid_wifi = true;
-        bool valid_location_1 = true;
-        bool valid_location_2 = true;
+    WiFi.mode(WIFI_STA); 
+
+    WiFiManagerParameter parmLocation1("parmLocation1", "Location 1", location[0].name.c_str(), 15);
+    WiFiManagerParameter parmLocation2("parmLocation2", "Location 2", location[1].name.c_str(), 15);
+    WiFiManagerParameter parmPositionstackKey("parmPositionstackKey", "Positionstack key", apiKeys.POSITIONSTACK_KEY.c_str(), 40);
+    WiFiManagerParameter parmWaqiKey("parmWaqiKey", "Waqi key", apiKeys.WAQI_KEY.c_str(), 50);
+    WiFiManagerParameter parmOpenweatherKey("parmOpenweatherKey", "Openweather key", apiKeys.OPENWEATHER_KEY.c_str(), 40);
+    WiFiManagerParameter parmTimezdbKey("parmTimezdbKey", "Timezdb key", apiKeys.TIMEZDB_KEY.c_str(), 20);
+
+    WiFiManager wm;
+
+    wm.addParameter(&parmLocation1);
+    wm.addParameter(&parmLocation2);
+    wm.addParameter(&parmPositionstackKey);
+    wm.addParameter(&parmWaqiKey);
+    wm.addParameter(&parmOpenweatherKey);
+    wm.addParameter(&parmTimezdbKey);
+
+    //wm.setTimeout(120);
+    wm.setConfigPortalTimeout(60*5); //5 min
+
+    bool res = wm.startConfigPortal(network.c_str(), pass.c_str());
+
+    if (!res) {
+
+        dbgPrintln("Config: WiFi timeout..");
+
+        display.fillScreen(GxEPD_WHITE);
+        display.setFont(&Cousine_Regular6pt7b);
+        print_text(0, 5, String("Wifi connection timeout..\nPower off"));        
+        display.update();
+        delay(2000);
+
+        dbgPrintln("Config: power off..");
+
+        long sleep_time_micro_sec = 24* 60 * 1000 * 1000 * 60; //24h
+        esp_sleep_enable_timer_wakeup(sleep_time_micro_sec);
+        begin_deep_sleep();
+
+        delay(5000);
+        dbgPrintln("Config: Sleep..");
+    } 
+    else 
+    {
+        dbgPrintln("Config: WiFi connect Ok, restart to validation mode..");
+
+        display.fillScreen(GxEPD_WHITE);
+        display.setFont(&Cousine_Regular6pt7b);
+        print_text(0, 5, String("Wifi connected OK!"));
+        display.update();
+        delay(2000);
+
+        dbgPrintln("Config: save config..");
+
+        wifi.pass = wm.getWiFiPass();
+        wifi.ssid = wm.getWiFiSSID();
+
+        location_cnt = 1;
+        location[0].name = String(parmLocation1.getValue());
+        location[1].name = String(parmLocation2.getValue());
         
-        String ssid = get_param(request, "ssid", valid_wifi);
-        String pass = get_param(request, "pass", valid_wifi);
-        String location_1 = get_param(request, "loc1", valid_location_1);
-        String location_2 = get_param(request, "loc2", valid_location_2);
-
-        // setting config
-        if (valid_wifi && valid_location_1) {
-            wifi.pass = pass;
-            wifi.ssid = ssid;
-
-            location_cnt = 1;
-            location[0].name = location_1;
-            
-            if (valid_location_2) {
-                location_cnt = 2;
-                location[1].name = location_2;
-            }
-
-            save_config_to_memory();
-            set_mode(VALIDATING_MODE);
-            server.end();
-            ESP.restart();
-            return;
+        if (location[1].name != "") {
+            location_cnt = 2;
         }
 
-        String response_msg = create_validation_message(valid_wifi, valid_location_1, valid_location_2);
-        request->send(200, "text/html", response_msg);
-    });
-    server.addHandler(new CaptiveRequestHandler()).setFilter(ON_AP_FILTER);
-    server.onNotFound(http_resource_not_found);
-    server.begin();
+        apiKeys.POSITIONSTACK_KEY = String(parmPositionstackKey.getValue());
+        apiKeys.WAQI_KEY = String(parmWaqiKey.getValue());
+        apiKeys.OPENWEATHER_KEY = String(parmOpenweatherKey.getValue());
+        apiKeys.TIMEZDB_KEY = String(parmTimezdbKey.getValue());
+        
+        save_config_to_memory();
+
+        set_mode(VALIDATING_MODE);
+
+        print_text(0, 35, String("Restarting.."));
+        display.update();
+        
+        delay(3000);
+
+        ESP.restart();
+    }
+
 }
 
 
 void run_validating_mode() {
-    server.end();
+    //server.end();
+    String keyErrMsg;
+    bool checkFailed = false;
         
     read_config_from_memory();
+    
     display_validating_mode();
     display.update();
+    delay(2000);
     
     if (connect_to_wifi()) {
+
         location_request.handler = location_handler;
         WiFiClient client;
-        bool is_location_fetched = false;
+        //bool is_location_fetched = false;
+
+        dbgPrintln("Wifi connected, validate settings...");
+
+        if (apiKeys.POSITIONSTACK_KEY == "")
+        {
+          keyErrMsg = "POSITIONSTACK_KEY";
+        }
+
+        if (apiKeys.WAQI_KEY == "")
+        {
+          keyErrMsg += ",WAQI_KEY";
+        } 
+
+        if (apiKeys.OPENWEATHER_KEY == "")
+        {
+          keyErrMsg += ",OPENWEATHER_KEY";
+        } 
+
+        if (apiKeys.TIMEZDB_KEY == "")
+        {
+          keyErrMsg += ",TIMEZDB_KEY";
+        }
+
+        dbgPrintln("Validate key, missing keys: " + (keyErrMsg == ""? "No" : keyErrMsg));
+
+        if (keyErrMsg != "")
+        {
+          display.setFont(&Cousine_Regular6pt7b);
+          print_text(0, 45, "Key(s) is/are not configured:\n" + keyErrMsg + "\n" + "Restarting in 10 sec");
+          display.update();
+
+          set_mode(CONFIG_MODE);
+          delay(10000);
+
+          ESP.restart();
+          return;
+        }
         
+        dbgPrintln("Validate: get locations by names");
+
         if (location_cnt > 0) {
-            location_request.name = location[0].name;
-            location_request.make_path();
-            is_location_fetched = http_request_data(client, location_request);    
-        }
-        if (is_location_fetched) {
-            location[0].lat = location_request.response.lat;
-            location[0].lon = location_request.response.lon;
-                
-            if (location_cnt > 1) {
-                location_request.name = location[1].name;
+
+            dbgPrintln("Validate: for loop " + String(location_cnt) + " locations");
+
+            for (int idx = 0; idx < location_cnt; idx++)
+            {
+                location_request.name = location[idx].name;
+                location_request.api_key = apiKeys.POSITIONSTACK_KEY;
                 location_request.make_path();
-                is_location_fetched = http_request_data(client, location_request);
 
-                if (is_location_fetched) {
-                    location[1].lat = location_request.response.lat;
-                    location[1].lon = location_request.response.lon;
+                if (http_request_data(client, location_request))
+                {
+                    location[idx].lat = location_request.response.lat;
+                    location[idx].lon = location_request.response.lon;
 
-                    save_config_to_memory();
-                    set_mode_and_reboot(OPERATING_MODE);
-                    return;
+                    dbgPrintln("Validate: location " + location[idx].name + " fetched Ok");
                 }
-            } else {
-                save_config_to_memory();
-                set_mode_and_reboot(OPERATING_MODE);
-                return;
-            }
+                else
+                {
+                    dbgPrintln("Validate: location " + location[idx].name + " fetch FAILED");
+                    checkFailed = true;
+                }              
+            } //for
         }
+        else
+        {
+            dbgPrintln("Validate: no locations configured to fetch");
+            checkFailed = true;
+        }
+
+        if (checkFailed)
+        {
+          set_mode_and_reboot(CONFIG_MODE);
+          return;
+        } 
     }
-    set_mode_and_reboot(CONFIG_MODE);
+    else
+    {
+      dbgPrintln("Wifi connect failed, reboot to config...");
+      set_mode_and_reboot(CONFIG_MODE);
+    }
+
+    save_config_to_memory();
+    set_mode_and_reboot(OPERATING_MODE);
+    
 }
 
 
 void run_operating_mode() {
+
     read_config_from_memory();
     curr_loc = read_location_from_memory();
     wakeup_reason();
@@ -823,12 +900,15 @@ void run_operating_mode() {
     if (connect_to_wifi()) {
         WiFiClient client;
 
+        datetime_request.api_key = apiKeys.TIMEZDB_KEY;
         datetime_request.make_path(location[curr_loc]);
         datetime_request.handler = datetime_handler;
 
+        weather_request.api_key = apiKeys.OPENWEATHER_KEY;
         weather_request.make_path(location[curr_loc]);
         weather_request.handler = weather_handler;
 
+        airquality_request.api_key = apiKeys.WAQI_KEY;
         airquality_request.make_path(location[curr_loc]);
         airquality_request.handler = air_quality_handler;
 
@@ -842,7 +922,7 @@ void run_operating_mode() {
         update_weather_view(view, is_weather_fetched);
         update_air_quality_view(view, is_aq_fetched);
             
-        Serial.println("\nUpdate display.");
+        dbgPrintln("\nUpdate display.");
         display_header(view);
         display_weather(view);
         display_air_quality(view);
@@ -858,6 +938,9 @@ void run_operating_mode() {
 
 
 void set_mode(int mode) {
+
+    dbgPrintln("Set mode " + String(mode));
+
     preferences.begin(MEMORY_ID, false);
     preferences.putInt("mode", mode);
     preferences.end();
@@ -884,30 +967,30 @@ int get_mode(bool cached_mode) {
 
 void setup() {
     Serial.begin(115200); 
-    Serial.println("\n\n=== WEATHER STATION ===");
+    dbgPrintln("\n\n=== WEATHER STATION ===");
     init_display();
 
     if (get_mode() == NOT_SET_MODE) {
-        Serial.println("MODE: not set. Initializing mode to CONFIG_MODE.");
+        dbgPrintln("MODE: not set. Initializing mode to CONFIG_MODE.");
         set_mode_and_reboot(CONFIG_MODE);
     }
     const int mode = get_mode();
     
     if (mode == CONFIG_MODE) {
-        Serial.println("MODE: Config");
+        dbgPrintln("MODE: Config");
         run_config_server();
     } else if (mode == VALIDATING_MODE) {
-        Serial.println("MODE: Validating");
+        dbgPrintln("MODE: Validating");
         run_validating_mode();
     } else if (mode == OPERATING_MODE) {
-        Serial.println("MODE: Operating");
+        dbgPrintln("MODE: Operating");
         run_operating_mode();
     }
 }
 
 
 void loop() {  
-    // Serial.println("Handling DNS");
+    // dbgPrintln("Handling DNS");
 
     // Used only in CONFIG mode 
     dnsServer.processNextRequest();

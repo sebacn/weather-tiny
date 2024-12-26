@@ -24,7 +24,7 @@ struct Location {
         return String("[Location] name: ") + name + ", (lat, lon): (" + lat + ", " + lon +")";
     }
     void print() {
-        Serial.println(this->to_string());
+        Serial.println("=== DBG: " + this->to_string());
     }
 } ;
 
