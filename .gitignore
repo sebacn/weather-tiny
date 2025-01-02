@@ -52,3 +52,5 @@ Mkfile.old
 dkms.conf
 api_keys.h
 weather_tiny/api_keys.h
+.pio
+.vscode/c_cpp_properties.json

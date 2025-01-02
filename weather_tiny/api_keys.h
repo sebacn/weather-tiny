@@ -1,6 +1,8 @@
 #ifndef _api_keys_h
 #define _api_keys_h
 
+#include <Arduino.h>
+
 struct ApiKeys {
     String POSITIONSTACK_KEY = "";
     String WAQI_KEY = "";

@@ -5,7 +5,7 @@
 #include <time.h>
 #include "fmt.h"
 #include "config.h"
-//#include "api_keys.h"
+#include "ca_cert.h"
 
 struct Request;
 typedef bool (*ResponseHandler) (WiFiClient& resp_stream, Request request);
@@ -15,6 +15,7 @@ struct Request {
     String api_key = "";
     String path = "";
     ResponseHandler handler;
+    char const *ROOT_CA = nullptr; 
 
     void make_path() {}
     
@@ -45,7 +46,7 @@ struct TimeZoneDbRequest: Request {
 
     explicit TimeZoneDbRequest(): Request() {
         this->server = "api.timezonedb.com";
-        //this->api_key = apiKeys.TIMEZDB_KEY;
+        this->ROOT_CA = ROOT_CA_TIMEZONEDB;
     }
 
     explicit TimeZoneDbRequest(String server, String api_key) {
@@ -78,7 +79,7 @@ struct AirQualityRequest: Request {
     
     explicit AirQualityRequest(): Request() {
         this->server = "api.waqi.info";
-        //this->api_key = apiKeys.WAQI_KEY;
+        this->ROOT_CA = ROOT_CA_WAQI;
     } 
 
     explicit AirQualityRequest(String server, String api_key) {
@@ -114,7 +115,7 @@ struct GeocodingNominatimRequest: Request {
 
     explicit GeocodingNominatimRequest(): Request() {
         this->server = "api.positionstack.com";
-        //this->api_key = apiKeys.POSITIONSTACK_KEY;
+        this->ROOT_CA = ROOT_CA_POSITIONSTACK;
     }
 
     explicit GeocodingNominatimRequest(String server, String name) {
@@ -241,7 +242,7 @@ struct WeatherRequest: Request {
    
     explicit WeatherRequest(): Request() {
         this->server = "api.openweathermap.org";
-        this->api_key = apiKeys.OPENWEATHER_KEY;
+        this->ROOT_CA = ROOT_CA_OWM;
     }
     
     explicit WeatherRequest(String server, String api_key) {

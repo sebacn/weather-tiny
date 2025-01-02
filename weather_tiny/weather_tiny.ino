@@ -5,24 +5,10 @@
 #include <GxEPD.h>
 
 // #include <GxGDE0213B72B/GxGDE0213B72B.h> // 2.13" b/w
-#include <GxDEPG0213BN/GxDEPG0213BN.h>  // 2.13" b/w newer panel
+#include <GxDEPG0213BN/GxDEPG0213BN.h>  //V2.3.1 2.13" b/w newer panel
 
 #include <GxIO/GxIO_SPI/GxIO_SPI.h>
 #include <GxIO/GxIO.h>
-
-#define SPI_MOSI 23
-#define SPI_MISO -1
-#define SPI_CLK 18
-#define ELINK_SS 5
-#define ELINK_BUSY 4
-#define ELINK_RESET 16
-#define ELINK_DC 17
-
-GxIO_Class io(SPI, ELINK_SS, ELINK_DC, ELINK_RESET);
-GxEPD_Class display(io, ELINK_RESET, ELINK_BUSY);
-
-#define SCREEN_WIDTH   250
-#define SCREEN_HEIGHT  122
 
 // ----------------------------------
 // LIBS -----------------------------
@@ -45,12 +31,12 @@ GxEPD_Class display(io, ELINK_RESET, ELINK_BUSY);
 // FONTS ----------------------------
 // ----------------------------------
 
-#include "src/Adafruit_GFX_Library/Fonts/Monofonto10pt.h"
-#include "src/Adafruit_GFX_Library/Fonts/Monofonto12pt.h"
-#include "src/Adafruit_GFX_Library/Fonts/Monofonto18pt.h"
-#include "src/Adafruit_GFX_Library/Fonts/MeteoCons8pt.h"
-#include "src/Adafruit_GFX_Library/Fonts/MeteoCons10pt.h"
-#include "src/Adafruit_GFX_Library/Fonts/Cousine6pt.h"
+#include "fonts/Monofonto10pt.h"
+#include "fonts/Monofonto12pt.h"
+#include "fonts/Monofonto18pt.h"
+#include "fonts/MeteoCons8pt.h"
+#include "fonts/MeteoCons10pt.h"
+#include "fonts/Cousine6pt.h"
 
 // ----------------------------------
 // LOCAL FILES AND DECLARATIONS -----
@@ -97,7 +83,7 @@ struct WifiCredentials wifi;
 struct View view;
 
 int get_mode(bool cached_mode=false);
-DynamicJsonDocument deserialize(WiFiClient& resp_stream, const int size, bool is_embeded=false);
+JsonDocument deserialize(WiFiClient& resp_stream, bool is_embeded=false);
 
 
 // ----------------------------------
@@ -106,7 +92,7 @@ DynamicJsonDocument deserialize(WiFiClient& resp_stream, const int size, bool is
 
 template<typename T>
 T value_or_default(JsonObject jobj, String key, T default_value) {
-    if (!jobj.containsKey(key)) {
+    if (!jobj[key].is<T>()) {
         return default_value;
     } else {
         return jobj[key];
@@ -116,11 +102,36 @@ T value_or_default(JsonObject jobj, String key, T default_value) {
 
 template<typename T>
 T nested_value_or_default(JsonObject parent_jobj, String key, String nested_key, T default_value) {
-    if (!parent_jobj.containsKey(key)) {
+    if (!parent_jobj[key].is<T>()) {
         return default_value;
     } else {
         return parent_jobj[key][nested_key];
     }
+}
+
+void print_pt()
+{
+  printf("\n\nESP32 Partition table:\n\n");
+
+  printf("| Type | Sub |  Offset  |   Size   | Size (b) |       Label      |\n");
+  printf("| ---- | --- | -------- | -------- | -------- | ---------------- |\n");
+  
+  esp_partition_iterator_t pi = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
+  if (pi != NULL) {
+    do {
+      const esp_partition_t* p = esp_partition_get(pi);
+      printf("|  %02x  | %02x  | 0x%06X | 0x%06X | %8d | %-16s |\r\n", 
+        p->type, p->subtype, p->address, p->size, p->size, p->label);
+    } while (pi = (esp_partition_next(pi)));
+  }
+
+  uint32_t program_size = ESP.getSketchSize();
+  uint32_t free_size = ESP.getFlashChipSize();
+  uint32_t psram_size = ESP.getPsramSize();
+  uint32_t free_sketch_space = ESP.getFreeSketchSpace();
+
+  Serial.println("\nSketch size: " + String(program_size) + "\nFree sketch space: " + String(free_sketch_space) 
+    + "\nFlash chip size: " + String(free_size) + "\nPsram size: " + String(psram_size) +"\n\n");
 }
 
 String dbgPrintln(String _str = "") {
@@ -252,8 +263,8 @@ void update_percip_forecast(WeatherResponseRainHourly& percip, JsonObject& root,
 
 
 bool location_handler(WiFiClient& resp_stream, Request request) {
-    const int json_size = 20 * 1024;
-    DynamicJsonDocument doc = deserialize(resp_stream, json_size, true);
+    //const int json_size = 20 * 1024;
+    JsonDocument doc = deserialize(resp_stream, true);
     JsonObject api_resp = doc.as<JsonObject>();
 
     if (api_resp.isNull()) {
@@ -269,8 +280,8 @@ bool location_handler(WiFiClient& resp_stream, Request request) {
 
 
 bool datetime_handler(WiFiClient& resp_stream, Request request) {
-    const int json_size = 10 * 1024;
-    DynamicJsonDocument doc = deserialize(resp_stream, json_size, true);
+    //const int json_size = 10 * 1024;
+    JsonDocument doc = deserialize(resp_stream, true);
     JsonObject api_resp = doc.as<JsonObject>();
 
     if (api_resp.isNull()) {
@@ -285,8 +296,8 @@ bool datetime_handler(WiFiClient& resp_stream, Request request) {
     
 
 bool weather_handler(WiFiClient& resp_stream, Request request) {
-    const int json_size = 35 * 1024;
-    DynamicJsonDocument doc = deserialize(resp_stream, json_size);
+    //const int json_size = 35 * 1024;
+    JsonDocument doc = deserialize(resp_stream);
     JsonObject api_resp = doc.as<JsonObject>();
 
     if (api_resp.isNull()) {
@@ -315,7 +326,7 @@ bool weather_handler(WiFiClient& resp_stream, Request request) {
 
 bool air_quality_handler(WiFiClient& resp_stream, Request request) {
     const int json_size = 6 * 1024;
-    DynamicJsonDocument doc = deserialize(resp_stream, json_size);
+    JsonDocument doc = deserialize(resp_stream, json_size);
     JsonObject api_resp = doc.as<JsonObject>();
     
     if (api_resp.isNull()) {
@@ -325,22 +336,29 @@ bool air_quality_handler(WiFiClient& resp_stream, Request request) {
         return false;
     }
     airquality_request = AirQualityRequest(request);
-    
+
+    if (api_resp["data"]["iaqi"]["pm25"]["v"].is<int>()) {
+        airquality_request.response.pm25 = api_resp["data"]["iaqi"]["pm25"]["v"].as<int>();
+    } else if (api_resp["data"]["forecast"]["daily"]["pm25"][0]["max"].is<int>()) {
+        airquality_request.response.pm25 = api_resp["data"]["forecast"]["daily"]["pm25"][0]["max"].as<int>();
+    }
+/*
     if (api_resp["data"]["iaqi"].containsKey("pm25")) {
         airquality_request.response.pm25 = api_resp["data"]["iaqi"]["pm25"]["v"].as<int>();
     } else if (api_resp["data"]["forecast"]["daily"].containsKey("pm25")) {
         airquality_request.response.pm25 = api_resp["data"]["forecast"]["daily"]["pm25"][0]["max"].as<int>();
     }
+    */
     airquality_request.response.print();
     
     return true;
 }
 
 
-DynamicJsonDocument deserialize(WiFiClient& resp_stream, const int size, bool is_embeded) {
+JsonDocument deserialize(WiFiClient& resp_stream, bool is_embeded) {
     // https://arduinojson.org/v6/assistant/
-    Serial.print("\nDeserializing json, size:" + String(size) + " bytes...");
-    DynamicJsonDocument doc(size);
+    Serial.print("\nDeserializing json, size: x bytes...");
+    JsonDocument doc;
     DeserializationError error;
     
     if (is_embeded) {
@@ -349,6 +367,7 @@ DynamicJsonDocument deserialize(WiFiClient& resp_stream, const int size, bool is
         int end = stream_as_string.lastIndexOf('}');
         Serial.print("\nEmbeded json algorithm obtained document...\n");
         String trimmed_json = stream_as_string.substring(begin, end+1);
+        Serial.print("\nJson size: " + String(trimmed_json.length()) + " bytes...");
         dbgPrintln(trimmed_json);
         error = deserializeJson(doc, trimmed_json);
     } else {
@@ -383,7 +402,7 @@ int get_battery_percent(int adc_value) {
 }
 
 
-bool http_request_data(WiFiClient& client, Request request, unsigned int retry=3) {
+bool http_request_data(WiFiClientSecure& client, Request request, unsigned int retry=3) {
     
     bool ret_val = false;
 
@@ -392,7 +411,8 @@ bool http_request_data(WiFiClient& client, Request request, unsigned int retry=3
         client.stop();
         HTTPClient http;
         Serial.printf("\nHTTP connecting to %s%s [retry left: %s]", request.server.c_str(), request.path.c_str(), String(retry).c_str());
-        http.begin(client, request.server, 80, request.path);
+        client.setCACert(request.ROOT_CA);
+        http.begin(client, request.server, 443, request.path);
         int http_code = http.GET();
         
         if(http_code == HTTP_CODE_OK) {
@@ -479,8 +499,9 @@ void wakeup_reason() {
     print_reset_reason(rtc_get_reset_reason(1));
     dbgPrintln();
     
-    switch(wakeup_reason){
-        dbgPrintln("Location variable: " + String(curr_loc));
+    dbgPrintln("Location variable: " + String(curr_loc));
+
+    switch(wakeup_reason){        
         
         case ESP_SLEEP_WAKEUP_EXT0 : 
             dbgPrintln("\nWakeup by ext signal RTC_IO -> GPIO39"); 
@@ -669,6 +690,8 @@ void run_config_server() {
     //WiFi.softAP(network.c_str(), pass.c_str());
     //WiFi.softAP(network.c_str());  // <- without password
 
+    print_pt();
+
     read_config_from_memory();
 
     IPAddress localIp(192, 168, 4, 1);
@@ -719,8 +742,8 @@ void run_config_server() {
 
         dbgPrintln("Config: power off..");
 
-        long sleep_time_micro_sec = 24* 60 * 1000 * 1000 * 60; //24h
-        esp_sleep_enable_timer_wakeup(sleep_time_micro_sec);
+        //long sleep_time_micro_sec = 24* 60 * 1000 * 1000 * 60; //24h
+        esp_sleep_enable_timer_wakeup(3600000000*24);
         begin_deep_sleep();
 
         delay(5000);
@@ -789,8 +812,7 @@ void run_validating_mode() {
     
     if (connect_to_wifi()) {
 
-        location_request.handler = location_handler;
-        WiFiClient client;
+        WiFiClientSecure client;
         //bool is_location_fetched = false;
 
         dbgPrintln("Wifi connected, validate settings...");
@@ -841,9 +863,10 @@ void run_validating_mode() {
             dbgPrintln("Validate: for loop " + String(location_cnt) + " locations");
 
             for (int idx = 0; idx < location_cnt; idx++)
-            {
+            {                
                 location_request.name = location[idx].name;
                 location_request.api_key = apiKeys.POSITIONSTACK_KEY;
+                location_request.handler = location_handler;
                 location_request.make_path();
 
                 if (http_request_data(client, location_request))
@@ -863,16 +886,16 @@ void run_validating_mode() {
             if (!checkFailed)
             {
                 datetime_request.api_key = apiKeys.TIMEZDB_KEY;
-                datetime_request.make_path(location[0]);
                 datetime_request.handler = datetime_handler;
+                datetime_request.make_path(location[0]);
 
                 weather_request.api_key = apiKeys.OPENWEATHER_KEY;
-                weather_request.make_path(location[0]);
                 weather_request.handler = weather_handler;
+                weather_request.make_path(location[0]);                
 
                 airquality_request.api_key = apiKeys.WAQI_KEY;
-                airquality_request.make_path(location[0]);
                 airquality_request.handler = air_quality_handler;
+                airquality_request.make_path(location[0]);                
 
                 bool is_time_fetched = http_request_data(client, datetime_request);
                 bool is_weather_fetched = http_request_data(client, weather_request);
@@ -941,19 +964,19 @@ void run_operating_mode() {
     wakeup_reason();
 
     if (connect_to_wifi()) {
-        WiFiClient client;
+        WiFiClientSecure client;
 
-        datetime_request.api_key = apiKeys.TIMEZDB_KEY;
-        datetime_request.make_path(location[curr_loc]);
+        datetime_request.api_key = apiKeys.TIMEZDB_KEY;        
         datetime_request.handler = datetime_handler;
+        datetime_request.make_path(location[curr_loc]);
 
         weather_request.api_key = apiKeys.OPENWEATHER_KEY;
-        weather_request.make_path(location[curr_loc]);
         weather_request.handler = weather_handler;
+        weather_request.make_path(location[curr_loc]);        
 
         airquality_request.api_key = apiKeys.WAQI_KEY;
-        airquality_request.make_path(location[curr_loc]);
         airquality_request.handler = air_quality_handler;
+        airquality_request.make_path(location[curr_loc]);       
 
         bool is_time_fetched = http_request_data(client, datetime_request);
         bool is_weather_fetched = http_request_data(client, weather_request);
