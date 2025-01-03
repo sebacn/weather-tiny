@@ -4,7 +4,7 @@
 
 #include <time.h>
 #include "i18n.h"
-
+#include <Arduino.h>
 
 String capitalize(String str) {
     String first_letter = str.substring(0, 1);
@@ -47,14 +47,16 @@ String fmt_2f1(float f) {
 
 String header_datetime(time_t* dt, bool updated) {
     struct tm *t = localtime(dt);
+    Serial.println(t, "%a %b %d %Y   %H:%M:%S"); 
+    Serial.println("Year: " + String(t->tm_year));
     char date[9+1];  // last char is '\0'
-    sprintf(date, "%s %02u/%02u", get_weekday(t->tm_wday), t->tm_mday, t->tm_mon+1);
+    sprintf(date, "%02u.%02u.%04u", /*get_weekday(t->tm_wday),*/ t->tm_mday, t->tm_mon+1, 1900 + t->tm_year);
     char curr_time[5+1];  // last char is '\0'
     sprintf(curr_time, "%02u:%02u", t->tm_hour, t->tm_min);
     if (updated) {
-        return String(curr_time) + " " + String(date);
+        return String(date) + " " + String(curr_time);
     } else {
-        return String(curr_time) + "!" + String(date);
+        return String(date) + "!" + String(curr_time);
     }
 }
 

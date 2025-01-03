@@ -8,6 +8,8 @@
 #include <GxDEPG0213BN/GxDEPG0213BN.h>
 
 #include "view.h"
+#include "fonts/Monofonto6pt7b.h"
+#include "fonts/Monofonto8pt7b.h"
 #include "fonts/Monofonto10pt.h"
 #include "fonts/Monofonto12pt.h"
 #include "fonts/Monofonto18pt.h"
@@ -22,12 +24,15 @@
 #define ELINK_BUSY 4
 #define ELINK_RESET 16
 #define ELINK_DC 17
+#define ADC_PIN 35
 
 GxIO_Class io(SPI, ELINK_SS, ELINK_DC, ELINK_RESET);
 GxEPD_Class display(io, ELINK_RESET, ELINK_BUSY);
 
 #define SCREEN_WIDTH   250
 #define SCREEN_HEIGHT  122
+
+int get_battery_percent(int adc_value);
 
 struct WindArrow {
     int x = 0, y = 0;
@@ -174,11 +179,18 @@ void init_display() {
 
 void display_config_mode(String network, String pass, String ip, String exparam = "") {
     display.setFont(&monofonto18pt7b);
-    print_text(50, 0, "Welcome!");
+    print_text(0, 0, "Welcome!");
     display.setFont(&Cousine_Regular6pt7b);
     print_text(0, 8, String("Connect to weather station...") + "\nSSID: " + network + "\nPass: " + pass);
     print_text(0, 65, String("URL : http://") + ip +"\nSTATUS : " + exparam);
     //print_text(0, 65, String("and configure... \n") + "http://" + ip + "config");
+
+    int battery_percent = get_battery_percent(analogRead(ADC_PIN));
+    display.setFont(&monofonto8pt7b);    
+
+    display_battery_icon(SCREEN_WIDTH - 65, 0, display, battery_percent); //(batt_x, 3, display, view.battery_percent);
+    // display_battery_percentage
+    print_text(SCREEN_WIDTH - 35, -2, String(battery_percent > 100? 100: battery_percent) + "%"); 
 }
 
 
@@ -192,25 +204,27 @@ void display_validating_mode() {
 
 
 void display_header(View& view) {
-    display.setFont(&monofonto10pt7b);
-    print_text(0, -3, view.location);
-    //display.setFont(&monofont);
-    print_text(SCREEN_WIDTH - get_text_width(view.datetime)-3, -12, view.datetime);
-    int batt_x = SCREEN_WIDTH - get_text_width(view.datetime) - 33;
 
-    batt_x = SCREEN_WIDTH - 33;
-    display_battery_icon(batt_x, 21, display, view.battery_percent); //(batt_x, 3, display, view.battery_percent);
+    display.setFont(&monofonto12pt7b);
+    print_text(0, 20, view.location);
+
+    display.setFont(&monofonto8pt7b);
+    print_text(0, -12, view.datetime);
+    //int batt_x = SCREEN_WIDTH - get_text_width(view.datetime) - 33;
+
+    //batt_x = SCREEN_WIDTH - 33;
+    display_battery_icon(SCREEN_WIDTH - 65, 0, display, view.battery_percent); //(batt_x, 3, display, view.battery_percent);
     // display_battery_percentage
-    // print_text(batt_x, 3, view.battery_percent_display);  
+    print_text(SCREEN_WIDTH - 35, -2, view.battery_percent_display);  
 }
 
 
 void display_weather(View& view) {
     display.setFont(&meteocons_webfont10pt7b);
-    print_text(2, 21, view.weather_icon);
+    print_text(SCREEN_WIDTH/2 - 15, 25, view.weather_icon);
     
     display.setFont(&Cousine_Regular6pt7b);
-    print_text(30, 24, view.weather_desc);
+    print_text(SCREEN_WIDTH/2 + 10, 24, view.weather_desc);
 
     display.setFont(&monofonto18pt7b);
     print_text(30, 45, view.temp_curr);

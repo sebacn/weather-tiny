@@ -23,6 +23,7 @@
 #include <rom/rtc.h> 
 #include <Preferences.h>
 #include <WiFiManager.h> 
+#include <ESP32Time.h>
 
 #define ADC_PIN 35
 #define WAKE_BTN_PIN 39
@@ -68,9 +69,11 @@ Preferences preferences;
 bool shouldSaveConfig = false;
 bool configOk = false;
 
-int cached_MODE = 0;
+//int cached_MODE = 0;
 int curr_loc = 0;
 int SLEEP_INTERVAL_MIN;
+int wakeupHour;  // Wakeup after 07:00 to save battery power
+int sleepHour;
 
 struct WeatherRequest weather_request;
 struct AirQualityRequest airquality_request;
@@ -82,7 +85,7 @@ struct Location location[2];
 struct WifiCredentials wifi;
 struct View view;
 
-int get_mode(bool cached_mode=false);
+int get_mode();
 JsonDocument deserialize(WiFiClient& resp_stream, bool is_embeded=false);
 
 
@@ -156,6 +159,8 @@ void update_header_view(View& view, bool data_updated) {
     }
     view.battery_percent_display = String(percent_display) + "%";
     view.datetime = header_datetime(&datetime_request.response.dt, data_updated);
+
+    dbgPrintln("Date time: " + view.datetime);
 }
 
 
@@ -535,22 +540,47 @@ void wakeup_reason() {
 void enable_timed_sleep(int interval_minutes) {
     // sleep and wake up round minutes, ex every 15 mins
     // will wake up at 7:15, 7:30, 7:45 etc.
+    dbgPrintln("enable_timed_sleep (MIN): " + String(interval_minutes));
+
+    //ESP32Time rtc(0);
 
     struct tm* timeinfo;
     timeinfo = localtime(&datetime_request.response.dt);
     int current_time_min = timeinfo->tm_min;
     int current_time_sec = timeinfo->tm_sec;
+
     int sleep_minutes_left = interval_minutes - current_time_min % interval_minutes - 1;  // - 1 minute running in seconds
     int sleep_seconds_left = 60 - current_time_sec;
     int sleep_time_seconds = sleep_minutes_left * 60 + sleep_seconds_left;
-    
+
     long sleep_time_micro_sec = sleep_time_seconds * 1000 * 1000;
-    esp_sleep_enable_timer_wakeup(sleep_time_micro_sec);
-    Serial.printf("\nWake up in %d minutes and %d seconds", sleep_minutes_left, sleep_seconds_left);
+
+    //rtc.setTime(datetime_request.response.dt);
+/*
+    bool WakeUp = false;
+    while (!WakeUp && sleep_time_seconds && rtc.offset < 86400)
+    {
+        rtc.offset += sleep_time_seconds;
+
+        if (wakeupHour > sleepHour)
+            WakeUp = (rtc.getHour() >= wakeupHour || rtc.getHour() <= sleepHour);
+        else
+            WakeUp = (rtc.getHour() >= wakeupHour && rtc.getHour() <= sleepHour);
+    }
+    
+    long sleep_time_micro_sec = rtc.offset * 1000 * 1000;
+    */
+    Serial.printf("\nWake up in %d hours, %d minutes and %d seconds (%d)\n", sleep_time_seconds/3600, sleep_time_seconds/60, sleep_time_seconds, sleep_time_micro_sec);
+    esp_err_t ret = esp_sleep_enable_timer_wakeup(sleep_time_micro_sec);
+
+    dbgPrintln("esp_sleep_enable_timer_wakeup: " + String(ret));
 }
 
 
 void begin_deep_sleep() {
+
+    dbgPrintln("Start begin_deep_sleep");
+
 #ifdef BUILTIN_LED
     pinMode(BUILTIN_LED, INPUT); // If it's On, turn it off and some boards use GPIO-5 for SPI-SS, which remains low after screen use
     digitalWrite(BUILTIN_LED, HIGH);
@@ -576,6 +606,8 @@ void begin_deep_sleep() {
 
     // start sleep
     esp_deep_sleep_start();
+
+    dbgPrintln("End begin_deep_sleep");
 }
 
 
@@ -606,6 +638,12 @@ void read_config_from_memory() {
     dbgPrintln("Locations: " + String(location_cnt));
 
     SLEEP_INTERVAL_MIN = preferences.getInt("SLEEP_MIN");
+    wakeupHour = preferences.getInt("WakeupHour", 7);
+    sleepHour = preferences.getInt("SleepHour", 23);
+
+    dbgPrintln("SLEEP_INTERVAL_MIN: " + String(SLEEP_INTERVAL_MIN));
+    dbgPrintln("wakeupHour: " + String(wakeupHour));
+    dbgPrintln("sleepHour: " + String(sleepHour));
 
     location[0].name = preferences.getString("loc1", "");
     location[0].lat = preferences.getFloat("lat1", 0.0f);
@@ -655,6 +693,12 @@ void save_config_to_memory() {
     preferences.putInt("locations", location_cnt);  // global variable
 
     preferences.putInt("SLEEP_MIN", SLEEP_INTERVAL_MIN); 
+    preferences.putInt("WakeupHour", wakeupHour);
+    preferences.putInt("SleepHour", sleepHour);
+
+    dbgPrintln("SLEEP_INTERVAL_MIN: " + String(SLEEP_INTERVAL_MIN));
+    dbgPrintln("wakeupHour: " + String(wakeupHour));
+    dbgPrintln("sleepHour: " + String(sleepHour));
 
     location[0].print();
     preferences.putString("loc1", location[0].name);
@@ -712,7 +756,9 @@ void run_config_server() {
     WiFiManagerParameter parmWaqiKey("parmWaqiKey", "Waqi key", apiKeys.WAQI_KEY.c_str(), 50);
     WiFiManagerParameter parmOpenweatherKey("parmOpenweatherKey", "Openweather key", apiKeys.OPENWEATHER_KEY.c_str(), 40);
     WiFiManagerParameter parmTimezdbKey("parmTimezdbKey", "Timezdb key", apiKeys.TIMEZDB_KEY.c_str(), 20);
-    WiFiManagerParameter parmSleepInterval("parmSleepInterval", "Sleep interval (5-60 sec)", String(SLEEP_INTERVAL_MIN).c_str(), 20);
+    WiFiManagerParameter parmSleepInterval("parmSleepInterval", "Sleep interval (5-60 min)", String(SLEEP_INTERVAL_MIN).c_str(), 20);
+    WiFiManagerParameter parmWakeupHour("parmWakeupHour", "Wakeup hour", String(wakeupHour).c_str(), 10);
+    WiFiManagerParameter parmSleepHour("parmSleepHour", "Sleep hour", String(sleepHour).c_str(), 10);
 
     WiFiManager wm;
 
@@ -723,6 +769,8 @@ void run_config_server() {
     wm.addParameter(&parmOpenweatherKey);
     wm.addParameter(&parmTimezdbKey);
     wm.addParameter(&parmSleepInterval);
+    wm.addParameter(&parmWakeupHour);
+    wm.addParameter(&parmSleepHour);
 
     //wm.setTimeout(120);
     wm.setConfigPortalTimeout(60*5); //5 min
@@ -780,17 +828,32 @@ void run_config_server() {
             apiKeys.TIMEZDB_KEY = String(parmTimezdbKey.getValue());
 
             SLEEP_INTERVAL_MIN = atoi(parmSleepInterval.getValue());
+            wakeupHour = atoi(parmWakeupHour.getValue());
+            sleepHour = atoi(parmSleepHour.getValue());
             
             save_config_to_memory();
+
+            configOk = false;
         }        
 
-        set_mode(VALIDATING_MODE);
+        if (configOk)
+        {
+            set_mode(OPERATING_MODE);
+            print_text(0, 35, String("Restarting to operationg mode.."));
+            display.update();
+            delay(3000);
+            display.fillScreen(GxEPD_WHITE);
+            delay(1000);
+            run_operating_mode(true);
+        }
+        else
+        {
+            set_mode(VALIDATING_MODE);
+            print_text(0, 35, String("Restarting to validation mode.."));
+            display.update();
+        } 
 
-        print_text(0, 35, String("Restarting to validation mode.."));
-        display.update();
-        
         delay(3000);
-
         ESP.restart();
     }
 
@@ -840,6 +903,11 @@ void run_validating_mode() {
         if (SLEEP_INTERVAL_MIN < 5 || SLEEP_INTERVAL_MIN > 60)
         {
           keyErrMsg += ",SLEEP_INTERVAL_MIN";
+        }
+
+        if (sleepHour > 23)
+        {
+          keyErrMsg += "SleepHour";
         }
 
         dbgPrintln("Validate key, missing keys: " + (keyErrMsg == ""? "No" : keyErrMsg));
@@ -953,15 +1021,26 @@ void run_validating_mode() {
 
     configOk = true;
     save_config_to_memory();
-    set_mode_and_reboot(OPERATING_MODE);
+    set_mode(OPERATING_MODE);
+    print_text(0, 35, String("Restarting to operationg mode.."));
+    display.update();
+    delay(3000);
+    display.fillScreen(GxEPD_WHITE);
+    delay(1000);
+    run_operating_mode(true);
+
+    dbgPrintln("End validation mode");
+    delay(3000);
+    ESP.restart();
+    dbgPrintln("ESP restart");
 }
 
 
-void run_operating_mode() {
+void run_operating_mode(bool _skip_sleep_hours_check) {
+    bool WakeUp = false;
 
     read_config_from_memory();
-    curr_loc = read_location_from_memory();
-    wakeup_reason();
+    curr_loc = read_location_from_memory();    
 
     if (connect_to_wifi()) {
         WiFiClientSecure client;
@@ -970,43 +1049,60 @@ void run_operating_mode() {
         datetime_request.handler = datetime_handler;
         datetime_request.make_path(location[curr_loc]);
 
-        weather_request.api_key = apiKeys.OPENWEATHER_KEY;
-        weather_request.handler = weather_handler;
-        weather_request.make_path(location[curr_loc]);        
+        bool is_time_fetched = http_request_data(client, datetime_request);   
 
-        airquality_request.api_key = apiKeys.WAQI_KEY;
-        airquality_request.handler = air_quality_handler;
-        airquality_request.make_path(location[curr_loc]);       
+        if (is_time_fetched)
+        {
+            struct tm* timeinfo = localtime(&datetime_request.response.dt);
+            if (wakeupHour > sleepHour)
+                WakeUp = (timeinfo->tm_hour >= wakeupHour || timeinfo->tm_hour <= sleepHour);
+            else
+                WakeUp = (timeinfo->tm_hour >= wakeupHour && timeinfo->tm_hour <= sleepHour);
+        } 
 
-        bool is_time_fetched = http_request_data(client, datetime_request);
-        bool is_weather_fetched = http_request_data(client, weather_request);
-        bool is_aq_fetched = http_request_data(client, airquality_request);
+        dbgPrintln("Time fetched: " + String(is_time_fetched) + ", WakeUp: " + String(WakeUp) + ", Skip sleep: " + String(_skip_sleep_hours_check));       
 
-        view = View();
+        if (WakeUp || _skip_sleep_hours_check) {
 
-        update_header_view(view, is_time_fetched); 
-        update_weather_view(view, is_weather_fetched);
-        update_air_quality_view(view, is_aq_fetched);
+            dbgPrintln("Start weather_request");
+            weather_request.api_key = apiKeys.OPENWEATHER_KEY;
+            weather_request.handler = weather_handler;
+            weather_request.make_path(location[curr_loc]);        
+
+            airquality_request.api_key = apiKeys.WAQI_KEY;
+            airquality_request.handler = air_quality_handler;
+            airquality_request.make_path(location[curr_loc]); 
             
-        dbgPrintln("\nUpdate display.");
-        display_header(view);
-        display_weather(view);
-        display_air_quality(view);
-    }
+            bool is_weather_fetched = http_request_data(client, weather_request);
+            bool is_aq_fetched = http_request_data(client, airquality_request);
 
-    display.update();
-    delay(100); // too fast display powerDown displays blank (white)??
+            view = View();
+
+            update_header_view(view, is_time_fetched); 
+            update_weather_view(view, is_weather_fetched);
+            update_air_quality_view(view, is_aq_fetched);
+                
+            dbgPrintln("\nUpdate display.");
+            display_header(view);
+            display_weather(view);
+            display_air_quality(view);
+
+            display.update();
+            delay(100); // too fast display powerDown displays blank (white)??
+            dbgPrintln("End weather_request");
+        }
+    }  
 
     // deep sleep stuff
     enable_timed_sleep(SLEEP_INTERVAL_MIN);
     begin_deep_sleep();
+    dbgPrintln("End run_operating_mode");
 }
 
 
 void set_mode(int mode) {
 
-    dbgPrintln("Set mode " + String(mode));
-    dbgPrintln("Config OK: " + String(configOk));
+    dbgPrintln("Set mode: " + String(mode) + ", Config OK: " + String(configOk));
 
     preferences.begin(MEMORY_ID, false);
     preferences.putInt("mode", mode);    
@@ -1021,21 +1117,14 @@ void set_mode_and_reboot(int mode) {
 }
 
 
-int get_mode(bool cached_mode) {
-
-    dbgPrintln("Get mode " + String(cached_mode));
-
-    if (cached_mode) {
-        return cached_MODE;
-    }
+int get_mode() {
 
     preferences.begin(MEMORY_ID, false);
     int mode = preferences.getInt("mode", NOT_SET_MODE);
     configOk = preferences.getBool("configOk", false);  // global variable
-    cached_MODE = mode;    
     preferences.end();
 
-    dbgPrintln("Config OK: " + String(configOk));
+    dbgPrintln("Get mode: " + String(mode) + ", Config OK: " + String(configOk));
 
     return mode;
 }
@@ -1060,7 +1149,8 @@ void setup() {
         run_validating_mode();
     } else if (mode == OPERATING_MODE) {
         dbgPrintln("MODE: Operating");
-        run_operating_mode();
+        wakeup_reason();
+        run_operating_mode(false);
     }
 }
 
