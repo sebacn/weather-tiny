@@ -146,6 +146,8 @@ String dbgPrintln(String _str) {
 
 void collectAndWriteLog(int mode, bool is_time_fetched, bool is_weather_fetched, bool is_aq_fetched)
 {
+    dbgPrintln("InfluxDBClient: collectAndWriteLog");
+
     logInfo.Mode = mode;
     logInfo.ConfigOk = configOk;
     logInfo.BootCount = boot_count;
@@ -685,6 +687,15 @@ void read_config_from_memory() {
     wakeupHour = preferences.getInt("WakeupHour", 7);
     sleepHour = preferences.getInt("SleepHour", 23);
 
+    logSettings.INFLUXDB_URL = preferences.getString("INFLUXDB_URL");
+    logSettings.INFLUXDB_BUCKET = preferences.getString("INFLUXDB_BUCKET");
+    logSettings.INFLUXDB_ORG = preferences.getString("INFLUXDB_ORG");
+    logSettings.INFLUXDB_TOKEN = preferences.getString("INFLUXDB_TOKEN");
+
+    dbgPrintln("INFLUXDB_URL: " + logSettings.INFLUXDB_URL);
+    dbgPrintln("INFLUXDB_BUCKET: " + logSettings.INFLUXDB_BUCKET);
+    dbgPrintln("INFLUXDB_ORG: " + logSettings.INFLUXDB_ORG);
+    dbgPrintln("INFLUXDB_TOKEN: " + logSettings.INFLUXDB_TOKEN);
     dbgPrintln("SLEEP_INTERVAL_MIN: " + String(SLEEP_INTERVAL_MIN));
     dbgPrintln("wakeupHour: " + String(wakeupHour));
     dbgPrintln("sleepHour: " + String(sleepHour));
@@ -740,6 +751,15 @@ void save_config_to_memory() {
     preferences.putInt("WakeupHour", wakeupHour);
     preferences.putInt("SleepHour", sleepHour);
 
+    preferences.putString("INFLUXDB_URL", logSettings.INFLUXDB_URL);
+    preferences.putString("INFLUXDB_BUCKET", logSettings.INFLUXDB_BUCKET);
+    preferences.putString("INFLUXDB_ORG", logSettings.INFLUXDB_ORG);
+    preferences.putString("INFLUXDB_TOKEN", logSettings.INFLUXDB_TOKEN);
+
+    dbgPrintln("INFLUXDB_URL: " + logSettings.INFLUXDB_URL);
+    dbgPrintln("INFLUXDB_BUCKET: " + logSettings.INFLUXDB_BUCKET);
+    dbgPrintln("INFLUXDB_ORG: " + logSettings.INFLUXDB_ORG);
+    dbgPrintln("INFLUXDB_TOKEN: " + logSettings.INFLUXDB_TOKEN);
     dbgPrintln("SLEEP_INTERVAL_MIN: " + String(SLEEP_INTERVAL_MIN));
     dbgPrintln("wakeupHour: " + String(wakeupHour));
     dbgPrintln("sleepHour: " + String(sleepHour));
@@ -804,10 +824,10 @@ void run_config_server() {
     WiFiManagerParameter parmWakeupHour("parmWakeupHour", "Wakeup hour", String(wakeupHour).c_str(), 10);
     WiFiManagerParameter parmSleepHour("parmSleepHour", "Sleep hour", String(sleepHour).c_str(), 10);
 
-    WiFiManagerParameter parmINFLUXDB_URL("parmINFLUXDB_URL", "Log INFLUXDB_URL", logSettings.INFLUXDB_URL.c_str(), 10);
-    WiFiManagerParameter parmINFLUXDB_BUCKET("parmINFLUXDB_BUCKET", "Log INFLUXDB_BUCKET", logSettings.INFLUXDB_BUCKET.c_str(), 10);
-    WiFiManagerParameter parmINFLUXDB_ORG("parmINFLUXDB_ORG", "Log INFLUXDB_ORG", logSettings.INFLUXDB_ORG.c_str(), 10);
-    WiFiManagerParameter parmINFLUXDB_TOKEN("parmINFLUXDB_TOKEN", "LogINFLUXDB_TOKEN", logSettings.INFLUXDB_TOKEN.c_str(), 10);
+    WiFiManagerParameter parmINFLUXDB_URL("parmINFLUXDB_URL", "Log INFLUXDB_URL", logSettings.INFLUXDB_URL.c_str(), 50);
+    WiFiManagerParameter parmINFLUXDB_BUCKET("parmINFLUXDB_BUCKET", "Log INFLUXDB_BUCKET", logSettings.INFLUXDB_BUCKET.c_str(), 50);
+    WiFiManagerParameter parmINFLUXDB_ORG("parmINFLUXDB_ORG", "Log INFLUXDB_ORG", logSettings.INFLUXDB_ORG.c_str(), 50);
+    WiFiManagerParameter parmINFLUXDB_TOKEN("parmINFLUXDB_TOKEN", "LogINFLUXDB_TOKEN", logSettings.INFLUXDB_TOKEN.c_str(), 100);
 
     WiFiManager wm;
 

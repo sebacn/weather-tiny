@@ -128,6 +128,8 @@ LogInfo logInfo;
 
 bool writeLogInfo(){
 
+    dbgPrintln("InfluxDBClient: writeLogInfo");
+
     if (   logSettings.INFLUXDB_URL == ""
         || logSettings.INFLUXDB_ORG == ""
         || logSettings.INFLUXDB_BUCKET == ""
@@ -142,7 +144,11 @@ bool writeLogInfo(){
     pointDevice.addTag("ModeTag", logInfo.mode2String());
     pointDevice.addTag("ConfigOkTag", String(logInfo.ConfigOk));
 
-    pointDevice.setTime(logInfo.Timestamp);
+    if (logInfo.Timestamp)
+    {
+        pointDevice.setTime(logInfo.Timestamp);
+    }
+    
     pointDevice.addField("BootCount", logInfo.BootCount);
     //pointDevice.addField("Timestamp", logInfo.Timestamp);
     pointDevice.addField("BatteryPct", logInfo.BatteryPct);
@@ -156,6 +162,7 @@ bool writeLogInfo(){
 
     client.setWriteOptions(WriteOptions().writePrecision(WritePrecision::MS));
     client.setWriteOptions(WriteOptions().useServerTimestamp(logInfo.Timestamp == 0));
+
     // Write data
     bool ret = client.writePoint(pointDevice);
 
