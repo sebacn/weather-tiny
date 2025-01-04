@@ -22,8 +22,8 @@
 #include <DNSServer.h>
 #include <rom/rtc.h> 
 #include <Preferences.h>
-#include <WiFiManager.h> 
-#include <ESP32Time.h>
+#include <WiFiManager.h>
+#include <RTClib.h>
 
 #define ADC_PIN 35
 #define WAKE_BTN_PIN 39
@@ -52,6 +52,7 @@ ApiKeys apiKeys;
 #include "api_request.h"
 #include "display.h"
 #include "view.h"
+//#include "Time.h"
 
 #define MEMORY_ID "mem"
 #define LOC_MEMORY_ID "loc"
@@ -84,10 +85,10 @@ int location_cnt = 0;
 struct Location location[2];
 struct WifiCredentials wifi;
 struct View view;
+BootInfo bootInfo;
 
 int get_mode();
 JsonDocument deserialize(WiFiClient& resp_stream, bool is_embeded=false);
-
 
 // ----------------------------------
 // FUNCTION DEFINITIONS -------------
@@ -542,8 +543,7 @@ void enable_timed_sleep(int interval_minutes) {
     // will wake up at 7:15, 7:30, 7:45 etc.
     dbgPrintln("enable_timed_sleep (MIN): " + String(interval_minutes));
 
-    //ESP32Time rtc(0);
-
+/*
     struct tm* timeinfo;
     timeinfo = localtime(&datetime_request.response.dt);
     int current_time_min = timeinfo->tm_min;
@@ -553,24 +553,66 @@ void enable_timed_sleep(int interval_minutes) {
     int sleep_seconds_left = 60 - current_time_sec;
     int sleep_time_seconds = sleep_minutes_left * 60 + sleep_seconds_left;
 
+    Serial.printf("\nWake up in %d hours, %d minutes and %d seconds\n", sleep_time_seconds/3600, sleep_time_seconds/60, sleep_time_seconds);
+    dbgPrintln("sleep_time_seconds: " + String(sleep_time_seconds));
+
+    long sleep_time_micro_sec = sleep_time_seconds * 1000 * 1000;
+*/
+
+
+    DateTime curTime = DateTime(datetime_request.response.dt);
+    DateTime newTime;
+    char date_format[] = "YYYY.MM.DD:hh.mm.ss";
+    char date_format2[] = "YYYY.MM.DD:hh.mm.ss";
+
+    int idx = (curTime.minute()/interval_minutes) + 1;
+
+    if (interval_minutes * idx >= 60)
+    {
+        newTime = curTime + TimeSpan(0, 0, 60 - curTime.minute(), 0); //add time to xx.00.00
+    }
+    else
+    {        
+        newTime = curTime + TimeSpan(0, 0, interval_minutes * idx - curTime.minute(), 0);
+    }
+
+    //check wakeupHour and sleepHour
+    if (newTime.minute() > 0)
+    {  
+        if (wakeupHour > sleepHour)
+        {
+            if (newTime.hour() >= sleepHour && newTime.hour() < wakeupHour)
+            {                
+                newTime = newTime - TimeSpan(0, 0, newTime.minute(), newTime.second()); // set time to xx.00
+                newTime = newTime + TimeSpan(0, wakeupHour - newTime.hour(), 0, 0); // add sleep hours
+            }
+        }
+        else
+        {
+            if (newTime.hour() >= sleepHour || newTime.hour() < wakeupHour)
+            {                
+                newTime = newTime - TimeSpan(0, 0, newTime.minute(), newTime.second()); // set time to xx.00
+                if (newTime.hour() > sleepHour)
+                {
+                    newTime = newTime + TimeSpan(0, 24 - newTime.hour() + wakeupHour, 0, 0); // add sleep hours
+                }
+                else
+                {
+                    newTime = newTime + TimeSpan(0, wakeupHour - newTime.hour(), 0, 0); // add sleep hours
+                }                
+            }
+        }  
+    }
+
+    TimeSpan ts = (newTime - curTime);
+    int sleep_time_seconds = ts.totalseconds();
+    
+    dbgPrintln("DateTime Curreent :" + String(curTime.toString(date_format)));
+    dbgPrintln("DateTime WakeUp at:" + String(newTime.toString(date_format2)));
+    Serial.printf("=== DBG: DateTime Sleep for %d hours, %d minutes and %d seconds (total sec: %d)\n", ts.hours(), ts.minutes(), ts.seconds(), sleep_time_seconds);
+
     long sleep_time_micro_sec = sleep_time_seconds * 1000 * 1000;
 
-    //rtc.setTime(datetime_request.response.dt);
-/*
-    bool WakeUp = false;
-    while (!WakeUp && sleep_time_seconds && rtc.offset < 86400)
-    {
-        rtc.offset += sleep_time_seconds;
-
-        if (wakeupHour > sleepHour)
-            WakeUp = (rtc.getHour() >= wakeupHour || rtc.getHour() <= sleepHour);
-        else
-            WakeUp = (rtc.getHour() >= wakeupHour && rtc.getHour() <= sleepHour);
-    }
-    
-    long sleep_time_micro_sec = rtc.offset * 1000 * 1000;
-    */
-    Serial.printf("\nWake up in %d hours, %d minutes and %d seconds (%d)\n", sleep_time_seconds/3600, sleep_time_seconds/60, sleep_time_seconds, sleep_time_micro_sec);
     esp_err_t ret = esp_sleep_enable_timer_wakeup(sleep_time_micro_sec);
 
     dbgPrintln("esp_sleep_enable_timer_wakeup: " + String(ret));

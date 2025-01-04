@@ -221,7 +221,7 @@ void display_header(View& view) {
 
 void display_weather(View& view) {
     display.setFont(&meteocons_webfont10pt7b);
-    print_text(SCREEN_WIDTH/2 - 15, 25, view.weather_icon);
+    print_text(SCREEN_WIDTH/2 - 15, 22, view.weather_icon);
     
     display.setFont(&Cousine_Regular6pt7b);
     print_text(SCREEN_WIDTH/2 + 10, 24, view.weather_desc);
