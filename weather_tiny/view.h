@@ -1,9 +1,8 @@
 #ifndef _view_h
 #define _view_h
 
-
 # define PERCIP_SIZE 5
-
+#include <Arduino.h>
 
 struct View {
 

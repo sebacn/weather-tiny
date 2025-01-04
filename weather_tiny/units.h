@@ -1,6 +1,7 @@
 #ifndef _units_h
 #define _units_h
 
+#include <Arduino.h>
 
 int wind_ms2bft(float ms) {
     //return Math.ceil(Math.cbrt(Math.pow(ms/0.836, 2)));

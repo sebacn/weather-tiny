@@ -52,7 +52,7 @@ ApiKeys apiKeys;
 #include "api_request.h"
 #include "display.h"
 #include "view.h"
-//#include "Time.h"
+#include "loginfo.h"
 
 #define MEMORY_ID "mem"
 #define LOC_MEMORY_ID "loc"
@@ -85,7 +85,7 @@ int location_cnt = 0;
 struct Location location[2];
 struct WifiCredentials wifi;
 struct View view;
-BootInfo bootInfo;
+int boot_count;
 
 int get_mode();
 JsonDocument deserialize(WiFiClient& resp_stream, bool is_embeded=false);
@@ -138,10 +138,24 @@ void print_pt()
     + "\nFlash chip size: " + String(free_size) + "\nPsram size: " + String(psram_size) +"\n\n");
 }
 
-String dbgPrintln(String _str = "") {
+String dbgPrintln(String _str) {
     String ret = _str == ""? "" : "=== DBG: " + _str;
     Serial.println(ret);
     return ret + "\n";
+}
+
+void collectAndWriteLog(int mode, bool is_time_fetched, bool is_weather_fetched, bool is_aq_fetched)
+{
+    logInfo.Mode = mode;
+    logInfo.ConfigOk = configOk;
+    logInfo.BootCount = boot_count;
+    logInfo.Timestamp = datetime_request.response.dt;
+    logInfo.BatteryPct = get_battery_percent(analogRead(ADC_PIN));
+    logInfo.TimeFetchOk = is_time_fetched;
+    logInfo.WeatherFetchOk = is_weather_fetched;
+    logInfo.AQIFetchOk = is_aq_fetched;
+
+    writeLogInfo();
 }
 
 //callback notifying us of the need to save config
@@ -503,7 +517,7 @@ void wakeup_reason() {
     print_reset_reason(rtc_get_reset_reason(0));
     Serial.print(",  CPU1 reset reason: ");
     print_reset_reason(rtc_get_reset_reason(1));
-    dbgPrintln();
+    dbgPrintln("");
     
     dbgPrintln("Location variable: " + String(curr_loc));
 
@@ -543,23 +557,6 @@ void enable_timed_sleep(int interval_minutes) {
     // will wake up at 7:15, 7:30, 7:45 etc.
     dbgPrintln("enable_timed_sleep (MIN): " + String(interval_minutes));
 
-/*
-    struct tm* timeinfo;
-    timeinfo = localtime(&datetime_request.response.dt);
-    int current_time_min = timeinfo->tm_min;
-    int current_time_sec = timeinfo->tm_sec;
-
-    int sleep_minutes_left = interval_minutes - current_time_min % interval_minutes - 1;  // - 1 minute running in seconds
-    int sleep_seconds_left = 60 - current_time_sec;
-    int sleep_time_seconds = sleep_minutes_left * 60 + sleep_seconds_left;
-
-    Serial.printf("\nWake up in %d hours, %d minutes and %d seconds\n", sleep_time_seconds/3600, sleep_time_seconds/60, sleep_time_seconds);
-    dbgPrintln("sleep_time_seconds: " + String(sleep_time_seconds));
-
-    long sleep_time_micro_sec = sleep_time_seconds * 1000 * 1000;
-*/
-
-
     DateTime curTime = DateTime(datetime_request.response.dt);
     DateTime newTime;
     char date_format[] = "YYYY.MM.DD:hh.mm.ss";
@@ -574,6 +571,13 @@ void enable_timed_sleep(int interval_minutes) {
     else
     {        
         newTime = curTime + TimeSpan(0, 0, interval_minutes * idx - curTime.minute(), 0);
+    }
+
+    if (newTime.second() > 0)
+    {
+        // set time to xx.xx.15
+        newTime = newTime - TimeSpan(0, 0, 0, newTime.second()); 
+        newTime = newTime + TimeSpan(0, 0, 0, 15); // add 15 sec to not wakeUp before expected min
     }
 
     //check wakeupHour and sleepHour
@@ -613,9 +617,7 @@ void enable_timed_sleep(int interval_minutes) {
 
     long sleep_time_micro_sec = sleep_time_seconds * 1000 * 1000;
 
-    esp_err_t ret = esp_sleep_enable_timer_wakeup(sleep_time_micro_sec);
-
-    dbgPrintln("esp_sleep_enable_timer_wakeup: " + String(ret));
+    esp_sleep_enable_timer_wakeup(sleep_time_micro_sec);
 }
 
 
@@ -802,6 +804,11 @@ void run_config_server() {
     WiFiManagerParameter parmWakeupHour("parmWakeupHour", "Wakeup hour", String(wakeupHour).c_str(), 10);
     WiFiManagerParameter parmSleepHour("parmSleepHour", "Sleep hour", String(sleepHour).c_str(), 10);
 
+    WiFiManagerParameter parmINFLUXDB_URL("parmINFLUXDB_URL", "Log INFLUXDB_URL", logSettings.INFLUXDB_URL.c_str(), 10);
+    WiFiManagerParameter parmINFLUXDB_BUCKET("parmINFLUXDB_BUCKET", "Log INFLUXDB_BUCKET", logSettings.INFLUXDB_BUCKET.c_str(), 10);
+    WiFiManagerParameter parmINFLUXDB_ORG("parmINFLUXDB_ORG", "Log INFLUXDB_ORG", logSettings.INFLUXDB_ORG.c_str(), 10);
+    WiFiManagerParameter parmINFLUXDB_TOKEN("parmINFLUXDB_TOKEN", "LogINFLUXDB_TOKEN", logSettings.INFLUXDB_TOKEN.c_str(), 10);
+
     WiFiManager wm;
 
     wm.addParameter(&parmLocation1);
@@ -813,6 +820,11 @@ void run_config_server() {
     wm.addParameter(&parmSleepInterval);
     wm.addParameter(&parmWakeupHour);
     wm.addParameter(&parmSleepHour);
+
+    wm.addParameter(&parmINFLUXDB_URL);
+    wm.addParameter(&parmINFLUXDB_BUCKET);
+    wm.addParameter(&parmINFLUXDB_ORG);
+    wm.addParameter(&parmINFLUXDB_TOKEN);
 
     //wm.setTimeout(120);
     wm.setConfigPortalTimeout(60*5); //5 min
@@ -830,6 +842,7 @@ void run_config_server() {
         display.update();
         delay(2000);
 
+        collectAndWriteLog(CONFIG_MODE, false, false, false);
         dbgPrintln("Config: power off..");
 
         //long sleep_time_micro_sec = 24* 60 * 1000 * 1000 * 60; //24h
@@ -872,6 +885,11 @@ void run_config_server() {
             SLEEP_INTERVAL_MIN = atoi(parmSleepInterval.getValue());
             wakeupHour = atoi(parmWakeupHour.getValue());
             sleepHour = atoi(parmSleepHour.getValue());
+
+            logSettings.INFLUXDB_URL = String(parmINFLUXDB_URL.getValue());
+            logSettings.INFLUXDB_BUCKET = String(parmINFLUXDB_BUCKET.getValue());
+            logSettings.INFLUXDB_ORG = String(parmINFLUXDB_ORG.getValue());
+            logSettings.INFLUXDB_TOKEN = String(parmINFLUXDB_TOKEN.getValue());
             
             save_config_to_memory();
 
@@ -880,6 +898,7 @@ void run_config_server() {
 
         if (configOk)
         {
+            collectAndWriteLog(CONFIG_MODE, false, false, false);
             set_mode(OPERATING_MODE);
             print_text(0, 35, String("Restarting to operationg mode.."));
             display.update();
@@ -895,6 +914,7 @@ void run_config_server() {
             display.update();
         } 
 
+        collectAndWriteLog(CONFIG_MODE, false, false, false);
         delay(3000);
         ESP.restart();
     }
@@ -906,6 +926,9 @@ void run_validating_mode() {
     //server.end();
     String keyErrMsg;
     bool checkFailed = false;
+    bool is_time_fetched = false;
+    bool is_weather_fetched = false;
+    bool is_aq_fetched = false;
         
     read_config_from_memory();
     
@@ -960,6 +983,7 @@ void run_validating_mode() {
           print_text(0, 45, "Key(s) is/are not configured:\n" + keyErrMsg + "\n" + "Restarting in 10 sec");
           display.update();
 
+          collectAndWriteLog(VALIDATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
           set_mode(CONFIG_MODE);
           delay(10000);
           ESP.restart();
@@ -1007,9 +1031,9 @@ void run_validating_mode() {
                 airquality_request.handler = air_quality_handler;
                 airquality_request.make_path(location[0]);                
 
-                bool is_time_fetched = http_request_data(client, datetime_request);
-                bool is_weather_fetched = http_request_data(client, weather_request);
-                bool is_aq_fetched = http_request_data(client, airquality_request);
+                is_time_fetched = http_request_data(client, datetime_request);
+                is_weather_fetched = http_request_data(client, weather_request);
+                is_aq_fetched = http_request_data(client, airquality_request);
 
                 if (!is_time_fetched)
                 {
@@ -1042,6 +1066,7 @@ void run_validating_mode() {
           print_text(0, 45, "Validation failed:\n" + keyErrMsg);
           display.update();
 
+          collectAndWriteLog(VALIDATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
           set_mode(CONFIG_MODE);
           delay(15000);
           ESP.restart();
@@ -1056,7 +1081,8 @@ void run_validating_mode() {
       print_text(0, 45, "Wifi connection failed\nReboot to config...");
       display.update();
 
-      set_mode(CONFIG_MODE);
+      collectAndWriteLog(VALIDATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
+      set_mode(CONFIG_MODE);      
       delay(15000);
       ESP.restart();
     }
@@ -1080,6 +1106,9 @@ void run_validating_mode() {
 
 void run_operating_mode(bool _skip_sleep_hours_check) {
     bool WakeUp = false;
+    bool is_time_fetched = false;
+    bool is_weather_fetched = false;
+    bool is_aq_fetched = false;
 
     read_config_from_memory();
     curr_loc = read_location_from_memory();    
@@ -1091,7 +1120,7 @@ void run_operating_mode(bool _skip_sleep_hours_check) {
         datetime_request.handler = datetime_handler;
         datetime_request.make_path(location[curr_loc]);
 
-        bool is_time_fetched = http_request_data(client, datetime_request);   
+        is_time_fetched = http_request_data(client, datetime_request);   
 
         if (is_time_fetched)
         {
@@ -1115,8 +1144,8 @@ void run_operating_mode(bool _skip_sleep_hours_check) {
             airquality_request.handler = air_quality_handler;
             airquality_request.make_path(location[curr_loc]); 
             
-            bool is_weather_fetched = http_request_data(client, weather_request);
-            bool is_aq_fetched = http_request_data(client, airquality_request);
+            is_weather_fetched = http_request_data(client, weather_request);
+            is_aq_fetched = http_request_data(client, airquality_request);
 
             view = View();
 
@@ -1135,6 +1164,7 @@ void run_operating_mode(bool _skip_sleep_hours_check) {
         }
     }  
 
+    collectAndWriteLog(OPERATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
     // deep sleep stuff
     enable_timed_sleep(SLEEP_INTERVAL_MIN);
     begin_deep_sleep();
@@ -1149,6 +1179,7 @@ void set_mode(int mode) {
     preferences.begin(MEMORY_ID, false);
     preferences.putInt("mode", mode);    
     preferences.putBool("configOk", configOk);  // global variable
+    preferences.putInt("bootCount", boot_count); 
     preferences.end();    
 }
 
@@ -1164,6 +1195,7 @@ int get_mode() {
     preferences.begin(MEMORY_ID, false);
     int mode = preferences.getInt("mode", NOT_SET_MODE);
     configOk = preferences.getBool("configOk", false);  // global variable
+    boot_count = preferences.getInt("bootCount"); 
     preferences.end();
 
     dbgPrintln("Get mode: " + String(mode) + ", Config OK: " + String(configOk));
@@ -1179,9 +1211,11 @@ void setup() {
 
     if (get_mode() == NOT_SET_MODE) {
         dbgPrintln("MODE: not set. Initializing mode to CONFIG_MODE.");
+        boot_count++;
         set_mode_and_reboot(CONFIG_MODE);
     }
     const int mode = get_mode();
+    boot_count++;
     
     if (mode == CONFIG_MODE) {
         dbgPrintln("MODE: Config");
