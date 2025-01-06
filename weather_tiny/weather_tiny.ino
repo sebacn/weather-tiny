@@ -153,18 +153,24 @@ void print_pt()
   uint32_t free_sketch_space = ESP.getFreeSketchSpace();
 
   Serial.println("");
-  dbgPrintln("Sketch size: " + String(program_size));
-  dbgPrintln("Free sketch space: " + String(free_sketch_space));
-  dbgPrintln("Flash chip size: " + String(free_size));
-  dbgPrintln("Psram size: " + String(psram_size));
-  dbgPrintln("Stack size: " + String(CONFIG_ARDUINO_LOOP_STACK_SIZE));
-  dbgPrintln("uxTaskGetStackHighWaterMark: " + String(uxTaskGetStackHighWaterMark(NULL)) + "\n\n");    
+  infoPrintln("Sketch size: " + String(program_size));
+  infoPrintln("Free sketch space: " + String(free_sketch_space));
+  infoPrintln("Flash chip size: " + String(free_size));
+  infoPrintln("Psram size: " + String(psram_size));
+  infoPrintln("Stack size: " + String(CONFIG_ARDUINO_LOOP_STACK_SIZE));
+  infoPrintln("uxTaskGetStackHighWaterMark: " + String(uxTaskGetStackHighWaterMark(NULL)) + "\n\n");    
 }
 
 String dbgPrintln(String _str) {
-    String ret = "[D] " + _str;
-    Serial.printf("%.03f ",millis()/1000.0f); Serial.println(ret);
-    return ret + "\n";
+    #if defined(PROJ_DEBUG_ENABLE)
+    Serial.printf("%.03f ",millis()/1000.0f); Serial.println("[D] " + _str);
+    #endif
+    return _str + '\n';
+}
+
+String infoPrintln(String _str) {
+    Serial.printf("%.03f ",millis()/1000.0f); Serial.println("[I] " + _str);
+    return _str + '\n';
 }
 
 void collectAndWriteLog(int mode, bool is_time_fetched, bool is_weather_fetched, bool is_aq_fetched)
@@ -317,7 +323,7 @@ bool location_handler(WiFiClient& resp_stream, Request request) {
     }
     location_request = GeocodingNominatimRequest(request);
     GeocodingNominatimResponse& location_resp = location_request.response;
-    Serial.print("Geocoding...");
+    dbgPrintln("Geocoding...");
     update_location(location_resp, api_resp);
     location_resp.print();
     return true;
@@ -402,7 +408,7 @@ bool air_quality_handler(WiFiClient& resp_stream, Request request) {
 
 JsonDocument deserialize(WiFiClient& resp_stream, bool is_embeded) {
     // https://arduinojson.org/v6/assistant/
-    Serial.print("\nDeserializing json, size: x bytes...");
+    dbgPrintln("\nDeserializing json...");
     JsonDocument doc;
     DeserializationError error;
     
@@ -410,16 +416,16 @@ JsonDocument deserialize(WiFiClient& resp_stream, bool is_embeded) {
         String stream_as_string = resp_stream.readString();
         int begin = stream_as_string.indexOf('{');
         int end = stream_as_string.lastIndexOf('}');
-        Serial.print("\nEmbeded json algorithm obtained document...\n");
+        dbgPrintln("Embeded json algorithm obtained document...");
         String trimmed_json = stream_as_string.substring(begin, end+1);
-        Serial.print("\nJson size: " + String(trimmed_json.length()) + " bytes...");
+        dbgPrintln("Json size: " + String(trimmed_json.length()) + " bytes...");
         dbgPrintln(trimmed_json);
         error = deserializeJson(doc, trimmed_json);
     } else {
         error = deserializeJson(doc, resp_stream);
     }
     if (error) {
-        Serial.print(F("\ndeserialization error:"));
+        dbgPrintln(F("deserialization error:"));
         dbgPrintln(error.c_str());
     } else {
         dbgPrintln("deserialized.");
@@ -455,18 +461,18 @@ bool http_request_data(WiFiClientSecure& client, Request request, unsigned int r
         ret_val = true;
         client.stop();
         HTTPClient http;
-        Serial.printf("\nHTTP connecting to %s%s [retry left: %s]", request.server.c_str(), request.path.c_str(), String(retry).c_str());
+        infoPrintln("HTTP connecting to " + request.server + " [retry left: " + String(retry) + "]"); //request.server.c_str(), request.path.c_str(), String(retry).c_str());
         client.setCACert(request.ROOT_CA);
         http.begin(client, request.server, 443, request.path);
         int http_code = http.GET();
         
         if(http_code == HTTP_CODE_OK) {
-            dbgPrintln("\nHTTP connection established");
+            infoPrintln("HTTP connection OK");
             if (!request.handler(http.getStream(), request)) {
                 ret_val = false;
             }
         } else {
-            Serial.printf("\nHTTP connection failed %s, error: %s \n\n", String(http_code).c_str(), http.errorToString(http_code).c_str());
+            infoPrintln("HTTP connection failed " + String(http_code) + ", error: " + http.errorToString(http_code)); // String(http_code).c_str(), http.errorToString(http_code).c_str());
             ret_val = false;
         }
         client.stop();
@@ -494,7 +500,7 @@ bool connect_to_wifi(unsigned int retry=5) {
     WiFi.setAutoReconnect(true);
 
     while(wifi_conn_status != WL_CONNECTED && retry--) {
-        dbgPrintln("\nConnecting to: " + wifi.ssid + " [retry left: " + retry +"]");
+        dbgPrintln("Connecting to: " + wifi.ssid + " [retry left: " + retry +"]");
         unsigned long start = millis();
         wifi_conn_status = WiFi.begin(wifi.ssid.c_str(), wifi.pass.c_str());
         
@@ -522,25 +528,27 @@ bool connect_to_wifi(unsigned int retry=5) {
     return false;
 }
 
-void print_reset_reason(RESET_REASON reason) {
+String print_reset_reason(RESET_REASON reason) {
+    String ret = "";
     switch ( reason) {
-        case 1 : Serial.print("POWERON_RESET"); break;
-        case 3 : Serial.print("SW_RESET"); break;
-        case 4 : Serial.print("OWDT_RESET"); break;
-        case 5 : Serial.print("DEEPSLEEP_RESET"); break;
-        case 6 : Serial.print("SDIO_RESET"); break; 
-        case 7 : Serial.print("TG0WDT_SYS_RESET"); break;
-        case 8 : Serial.print("TG1WDT_SYS_RESET"); break;
-        case 9 : Serial.print("RTCWDT_SYS_RESET"); break;
-        case 10 : Serial.print("INTRUSION_RESET"); break;
-        case 11 : Serial.print("TGWDT_CPU_RESET"); break;
-        case 12 : Serial.print("SW_CPU_RESET"); break;
-        case 13 : Serial.print("RTCWDT_CPU_RESET"); break;
-        case 14 : Serial.print("EXT_CPU_RESET"); break;
-        case 15 : Serial.print("RTCWDT_BROWN_OUT_RESET"); break;
-        case 16 : Serial.print("RTCWDT_RTC_RESET"); break;
-        default : Serial.print("UNKNOWN");
+        case 1 : ret = "POWERON_RESET"; break;
+        case 3 : ret = "SW_RESET"; break;
+        case 4 : ret = "OWDT_RESET"; break;
+        case 5 : ret = "DEEPSLEEP_RESET"; break;
+        case 6 : ret = "SDIO_RESET"; break; 
+        case 7 : ret = "TG0WDT_SYS_RESET"; break;
+        case 8 : ret = "TG1WDT_SYS_RESET"; break;
+        case 9 : ret = "RTCWDT_SYS_RESET"; break;
+        case 10 : ret = "INTRUSION_RESET"; break;
+        case 11 : ret = "TGWDT_CPU_RESET"; break;
+        case 12 : ret = "SW_CPU_RESET"; break;
+        case 13 : ret = "RTCWDT_CPU_RESET"; break;
+        case 14 : ret = "EXT_CPU_RESET"; break;
+        case 15 : ret = "RTCWDT_BROWN_OUT_RESET"; break;
+        case 16 : ret = "RTCWDT_RTC_RESET"; break;
+        default : ret = "UNKNOWN";
     }
+    return ret;
 }
 
 
@@ -548,10 +556,8 @@ void wakeup_reason() {
     esp_sleep_wakeup_cause_t wakeup_reason;
     wakeup_reason = esp_sleep_get_wakeup_cause();
 
-    Serial.print("CPU0 reset reason: ");
-    print_reset_reason(rtc_get_reset_reason(0));
-    Serial.print(",  CPU1 reset reason: ");
-    print_reset_reason(rtc_get_reset_reason(1));
+    dbgPrintln("CPU0 reset reason: " + print_reset_reason(rtc_get_reset_reason(0)));
+    dbgPrintln("CPU1 reset reason: " + print_reset_reason(rtc_get_reset_reason(1)));
     dbgPrintln("");
     
     dbgPrintln("Location variable: " + String(curr_loc));
@@ -559,7 +565,7 @@ void wakeup_reason() {
     switch(wakeup_reason){        
         
         case ESP_SLEEP_WAKEUP_EXT0 : 
-            dbgPrintln("\nWakeup by ext signal RTC_IO -> GPIO39"); 
+            dbgPrintln("Wakeup by ext signal RTC_IO -> GPIO39"); 
             if (get_mode() == OPERATING_MODE) {
                 // Toggle between 2 screens caused by button press WAKE_BTN_PIN
                 if (location_cnt > 1) {
@@ -578,7 +584,7 @@ void wakeup_reason() {
         case ESP_SLEEP_WAKEUP_TIMER : dbgPrintln("Wakeup by timer"); break;
         case ESP_SLEEP_WAKEUP_TOUCHPAD : dbgPrintln("Wakeup by touchpad"); break;
         case ESP_SLEEP_WAKEUP_ULP : dbgPrintln("Wakeup by ULP program"); break;
-        default : Serial.printf("Wakeup not caused by deep sleep: %d\n", wakeup_reason); 
+        default : dbgPrintln("Wakeup not caused by deep sleep: " + String(wakeup_reason)); 
             if (rtc_get_reset_reason(0) == POWERON_RESET && rtc_get_reset_reason(1) == EXT_CPU_RESET)
             {
                 set_mode_and_reboot(CONFIG_MODE);
@@ -646,9 +652,11 @@ void enable_timed_sleep(int interval_minutes) {
     TimeSpan ts = (newTime - curTime);
     int sleep_time_seconds = ts.totalseconds();
     
-    dbgPrintln("DateTime Curreent :" + String(curTime.toString(date_format)));
-    dbgPrintln("DateTime WakeUp at:" + String(newTime.toString(date_format2)));
-    Serial.printf("=== DBG: DateTime Sleep for %d hours, %d minutes and %d seconds (total sec: %d)\n", ts.hours(), ts.minutes(), ts.seconds(), sleep_time_seconds);
+    infoPrintln("DateTime Curreent :" + String(curTime.toString(date_format)));
+    infoPrintln("DateTime WakeUp at:" + String(newTime.toString(date_format2)));
+    char buffer[150];
+    sprintf(buffer, "%d hours, %d minutes and %d seconds (total sec: %d)\n", ts.hours(), ts.minutes(), ts.seconds(), sleep_time_seconds);
+    infoPrintln("DateTime Sleep for " + String(buffer));
 
     long sleep_time_micro_sec = sleep_time_seconds * 1000 * 1000;
 
@@ -841,7 +849,7 @@ void run_config_server() {
 
     dnsServer.start(53, "*", WiFi.softAPIP());
     
-    Serial.printf("\nStart config server on ssid: %s, pass: %s, ip: %s \n\n", network.c_str(), pass.c_str(), WiFi.softAPIP().toString());
+    dbgPrintln("Start config server on ssid: " + network + ", pass: " + pass + ", ip: " + WiFi.softAPIP().toString());
     display_config_mode(network, pass, WiFi.softAPIP().toString(), "WiFi Configuration..");
     display.update();
 

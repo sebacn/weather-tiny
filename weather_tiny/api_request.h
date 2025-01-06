@@ -7,6 +7,8 @@
 #include "config.h"
 #include "ca_cert.h"
 
+extern String dbgPrintln(String _str);
+
 struct Request;
 typedef bool (*ResponseHandler) (WiFiClient& resp_stream, Request request);
 
@@ -32,12 +34,23 @@ struct TimeZoneDbResponse {
 
     void print() {
         struct tm* ti;  // timeinfo
-        ti = localtime(&dt);        
+        ti = localtime(&dt);
+
+        char buffer[100];
+        sprintf(buffer, ": %d:%d %d, %d-%d-%d \n", 
+            ti->tm_hour, ti->tm_min, ti->tm_wday, 
+            ti->tm_mday, ti->tm_mon+1, 1900+ti->tm_year
+        );
+
+        dbgPrintln("Date and time: " + String(buffer));
+
+        /*
         Serial.printf(
             "Date and time:  %d:%d %d, %d-%d-%d \n", 
             ti->tm_hour, ti->tm_min, ti->tm_wday, 
             ti->tm_mday, ti->tm_mon+1, 1900+ti->tm_year
         );
+        */
     }
 } ;
 
@@ -69,8 +82,8 @@ struct AirQualityResponse {
     int pm25;
     
     void print() {
-        Serial.println("Air quality (PM2.5): " + String(pm25));
-        Serial.println("");
+        dbgPrintln("Air quality (PM2.5): " + String(pm25));
+        dbgPrintln("");
     }
 } ;
 
@@ -103,9 +116,9 @@ struct GeocodingNominatimResponse {
     String label = "";
     
     void print() {
-        Serial.println("");
-        Serial.println("City: (" + String(lat) + ", " + String(lon) + ") " + label);
-        Serial.println("");
+        dbgPrintln("");
+        dbgPrintln("City: (" + String(lat) + ", " + String(lon) + ") " + label);
+        dbgPrintln("");
     }
 } ;
 
@@ -154,7 +167,7 @@ struct WeatherResponseHourly {  // current and hourly
     
     void print() {
         char buffer[150];
-        Serial.println("Weather currently: " + descr);        
+        dbgPrintln("Weather currently: " + descr);        
         // 15 * 8 char strings
         sprintf(
             buffer, 
@@ -163,7 +176,7 @@ struct WeatherResponseHourly {  // current and hourly
             "max_t", "min_t", "pressure", "clouds", "wind_bft", 
             "wind_deg", "icon", "snow", "rain", "pop"
         );
-        Serial.println(buffer);
+        dbgPrintln(String(buffer));
         sprintf(
             buffer, 
             "%8s %8s %8s %8d %8d %8d %8d %8d %8d %8d %8d %8s %8.1f %8.1f %8d",
@@ -172,7 +185,7 @@ struct WeatherResponseHourly {  // current and hourly
             pressure, clouds, wind_bft, wind_deg,
             icon, snow, rain, pop
         );
-        Serial.println(buffer);
+        dbgPrintln(String(buffer));
     }
 } ;
 
@@ -189,22 +202,23 @@ struct WeatherResponseDaily {
 
     void print() {
         char buffer[100];
-        Serial.print("Forecast: " + ts2dm(date_ts));
+        dbgPrintln("Forecast: " + ts2dm(date_ts));
         sprintf(
             buffer, 
             "%8s %8s %8s %8s %8s %8s %8s",
             "max_t", "min_t", "wind_bft", 
             "wind_deg", "pop", "snow", "rain"
         );
-        Serial.println(buffer);
-        Serial.printf("%15s", "");
+        dbgPrintln(String(buffer));
+        //Serial.printf("%15s", "");
+        dbgPrintln("");
         sprintf(
             buffer, 
             "%8d %8d %8d %8d %8d %8s %8s",
             max_t, min_t, wind_bft, wind_deg, pop,
             snow? "yes" : "no", rain? "yes" : "no"
         );
-        Serial.println(buffer);
+        dbgPrintln(String(buffer));
     }
 
 } ;
@@ -220,20 +234,21 @@ struct WeatherResponseRainHourly {
 
     void print() {
         char buffer[60];
-        Serial.print("Rain: " + ts2date(date_ts));
+        dbgPrintln("Rain: " + ts2date(date_ts));
         sprintf(
             buffer, 
             "%8s %8s %8s %8s %8s",
             "pop", "snow", "rain", "feel", "icon"
         );
-        Serial.println(buffer);
-        Serial.printf("%25s", "");
+        dbgPrintln(String(buffer));
+        //Serial.printf("%25s", "");
+        dbgPrintln("");
         sprintf(
             buffer, 
             "%8d %8.1f %8.1f %8.1f %8s",
             pop, snow, rain, feel_t, icon
         );
-        Serial.println(buffer);
+        dbgPrintln(String(buffer));
     }
 } ;
 

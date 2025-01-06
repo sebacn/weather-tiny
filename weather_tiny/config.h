@@ -4,6 +4,8 @@
 #include "api_keys.h"
 #include <ArduinoJson.h>
 
+extern String dbgPrintln(String _str);
+
 struct Location {
     String name = "";
     float lat = 0.0f;
@@ -19,10 +21,10 @@ struct Location {
     }
     
     String to_string() {
-        return String("[Location] name: ") + name + ", (lat, lon): (" + lat + ", " + lon +")";
+        return "[Location] name: " + name + ", (lat, lon): (" + String(lat) + ", " + String(lon) +")";
     }
     void print() {
-        Serial.println("=== DBG: " + this->to_string());
+        dbgPrintln(this->to_string());
     }
 } ;
 
