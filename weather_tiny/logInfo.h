@@ -46,7 +46,7 @@ struct LogInfo {
     bool TimeFetchOk; 
     bool WeatherFetchOk; 
     bool AQIFetchOk; 
-
+/*
     JsonDocument doc;
     
     String to_string() {
@@ -70,7 +70,7 @@ struct LogInfo {
     void print() {
         Serial.println("=== DBG: " + this->to_string() + "\n");
     }
-
+*/
     String mode2String()
     {
         String ret;
@@ -101,6 +101,7 @@ struct LogInfo {
 LogSettings logSettings;
 LogInfo logInfo;
 
+InfluxDBClient client;
 // Single InfluxDB instance
 
 void writeLogInfo(){
@@ -116,8 +117,9 @@ void writeLogInfo(){
         return;
     }
 
-    Point pointDevice("ttgo-t5-2.13-weather");
+    client.setConnectionParams(logSettings.INFLUXDB_URL, logSettings.INFLUXDB_ORG, logSettings.INFLUXDB_BUCKET, logSettings.INFLUXDB_TOKEN, ROOT_CA_INFLUXDB, MTLS_CERT, MTLS_PKEY);
 
+    Point pointDevice("ttgo-t5-2.13-weather");
     pointDevice.addTag("ModeTag", logInfo.mode2String());
     pointDevice.addTag("ConfigOkTag", String(logInfo.ConfigOk));
     pointDevice.addTag("TimeFetchOk", String(logInfo.TimeFetchOk));
@@ -133,9 +135,6 @@ void writeLogInfo(){
     
     pointDevice.addField("BootCount", logInfo.BootCount);
     pointDevice.addField("BatteryPct", logInfo.BatteryPct);
-
-    InfluxDBClient client(logSettings.INFLUXDB_URL, logSettings.INFLUXDB_ORG, logSettings.INFLUXDB_BUCKET, logSettings.INFLUXDB_TOKEN, 
-        ROOT_CA_INFLUXDB, MTLS_CERT, MTLS_PKEY);
 
     client.setInsecure(false);
 

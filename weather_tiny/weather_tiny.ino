@@ -54,6 +54,24 @@ ApiKeys apiKeys;
 #include "view.h"
 #include "loginfo.h"
 
+/*
+Replace in the sdkconfig.h
+
+From:
+#define CONFIG_ARDUINO_LOOP_STACK_SIZE 8192
+
+To:
+#if defined(CONFIG_ARDUINO_LOOP_STACK_SIZE_OVERRIDE)
+    #define CONFIG_ARDUINO_LOOP_STACK_SIZE CONFIG_ARDUINO_LOOP_STACK_SIZE_OVERRIDE
+#elif
+    #define CONFIG_ARDUINO_LOOP_STACK_SIZE 8192
+#endif
+*/
+
+#if CONFIG_ARDUINO_LOOP_STACK_SIZE <= 8192
+#error "Please increase ARDUINO_LOOP_STACK_SIZE to 16384 !!! (.platformio\packages\framework-arduinoespressif32\tools\sdk\esp32\dio_qspi\include\sdkconfig.h)"
+#endif
+
 #define MEMORY_ID "mem"
 #define LOC_MEMORY_ID "loc"
 
@@ -134,8 +152,13 @@ void print_pt()
   uint32_t psram_size = ESP.getPsramSize();
   uint32_t free_sketch_space = ESP.getFreeSketchSpace();
 
-  Serial.println("\nSketch size: " + String(program_size) + "\nFree sketch space: " + String(free_sketch_space) 
-    + "\nFlash chip size: " + String(free_size) + "\nPsram size: " + String(psram_size) +"\n\n");
+  Serial.println("");
+  dbgPrintln("Sketch size: " + String(program_size));
+  dbgPrintln("Free sketch space: " + String(free_sketch_space));
+  dbgPrintln("Flash chip size: " + String(free_size));
+  dbgPrintln("Psram size: " + String(psram_size));
+  dbgPrintln("Stack size: " + String(CONFIG_ARDUINO_LOOP_STACK_SIZE));
+  dbgPrintln("uxTaskGetStackHighWaterMark: " + String(uxTaskGetStackHighWaterMark(NULL)) + "\n\n");    
 }
 
 String dbgPrintln(String _str) {
