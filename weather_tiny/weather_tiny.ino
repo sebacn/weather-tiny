@@ -629,7 +629,7 @@ void enable_timed_sleep(int interval_minutes) {
         {
             if (newTime.hour() >= sleepHour && newTime.hour() < wakeupHour)
             {                
-                newTime = newTime - TimeSpan(0, 0, newTime.minute(), newTime.second()); // set time to xx.00
+                newTime = newTime - TimeSpan(0, 0, newTime.minute(), 0); // set time to xx.00
                 newTime = newTime + TimeSpan(0, wakeupHour - newTime.hour(), 0, 0); // add sleep hours
             }
         }
@@ -637,8 +637,8 @@ void enable_timed_sleep(int interval_minutes) {
         {
             if (newTime.hour() >= sleepHour || newTime.hour() < wakeupHour)
             {                
-                newTime = newTime - TimeSpan(0, 0, newTime.minute(), newTime.second()); // set time to xx.00
-                if (newTime.hour() > sleepHour)
+                newTime = newTime - TimeSpan(0, 0, newTime.minute(), 0); // set time to xx.00
+                if (newTime.hour() >= sleepHour)
                 {
                     newTime = newTime + TimeSpan(0, 24 - newTime.hour() + wakeupHour, 0, 0); // add sleep hours
                 }
