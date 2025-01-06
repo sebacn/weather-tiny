@@ -139,8 +139,8 @@ void print_pt()
 }
 
 String dbgPrintln(String _str) {
-    String ret = _str == ""? "" : "=== DBG: " + _str;
-    Serial.println(ret);
+    String ret = "[D] " + _str;
+    Serial.printf("%.03f ",millis()/1000.0f); Serial.println(ret);
     return ret + "\n";
 }
 
@@ -151,7 +151,7 @@ void collectAndWriteLog(int mode, bool is_time_fetched, bool is_weather_fetched,
     logInfo.Mode = mode;
     logInfo.ConfigOk = configOk;
     logInfo.BootCount = boot_count;
-    logInfo.Timestamp = datetime_request.response.dt;
+    logInfo.UTCTimestamp = is_time_fetched? (datetime_request.response.dt - datetime_request.response.gmt_offset) : 0;
     logInfo.BatteryPct = get_battery_percent(analogRead(ADC_PIN));
     logInfo.TimeFetchOk = is_time_fetched;
     logInfo.WeatherFetchOk = is_weather_fetched;
@@ -455,7 +455,17 @@ bool http_request_data(WiFiClientSecure& client, Request request, unsigned int r
 
 bool connect_to_wifi(unsigned int retry=5) {
 
-    int wifi_conn_status = WL_IDLE_STATUS;
+    int wifi_conn_status = WiFi.status();
+    
+    dbgPrintln("WiFi Connecting to: " + wifi.ssid);
+
+    if (wifi_conn_status == WL_CONNECTED)
+    {
+        dbgPrintln("WiFi already connected, exit..");
+        return true;
+    }
+    
+    //WL_IDLE_STATUS;
     WiFi.mode(WIFI_STA); // Access Point mode off
     WiFi.setAutoConnect(true);
     WiFi.setAutoReconnect(true);
@@ -862,8 +872,8 @@ void run_config_server() {
         display.update();
         delay(2000);
 
-        collectAndWriteLog(CONFIG_MODE, false, false, false);
-        dbgPrintln("Config: power off..");
+        //collectAndWriteLog(CONFIG_MODE, false, false, false);
+        //dbgPrintln("Config: power off..");
 
         //long sleep_time_micro_sec = 24* 60 * 1000 * 1000 * 60; //24h
         esp_sleep_enable_timer_wakeup(3600000000*24);
@@ -918,7 +928,10 @@ void run_config_server() {
 
         if (configOk)
         {
-            collectAndWriteLog(CONFIG_MODE, false, false, false);
+            if (connect_to_wifi()) 
+            {
+                collectAndWriteLog(CONFIG_MODE, false, false, false);
+            }
             set_mode(OPERATING_MODE);
             print_text(0, 35, String("Restarting to operationg mode.."));
             display.update();
@@ -934,7 +947,11 @@ void run_config_server() {
             display.update();
         } 
 
-        collectAndWriteLog(CONFIG_MODE, false, false, false);
+        if (connect_to_wifi()) 
+        {
+            collectAndWriteLog(CONFIG_MODE, false, false, false);
+        }
+
         delay(3000);
         ESP.restart();
     }
@@ -1004,6 +1021,7 @@ void run_validating_mode() {
           display.update();
 
           collectAndWriteLog(VALIDATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
+
           set_mode(CONFIG_MODE);
           delay(10000);
           ESP.restart();
@@ -1087,6 +1105,7 @@ void run_validating_mode() {
           display.update();
 
           collectAndWriteLog(VALIDATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
+
           set_mode(CONFIG_MODE);
           delay(15000);
           ESP.restart();
@@ -1101,7 +1120,7 @@ void run_validating_mode() {
       print_text(0, 45, "Wifi connection failed\nReboot to config...");
       display.update();
 
-      collectAndWriteLog(VALIDATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
+      //collectAndWriteLog(VALIDATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
       set_mode(CONFIG_MODE);      
       delay(15000);
       ESP.restart();
@@ -1109,6 +1128,9 @@ void run_validating_mode() {
 
     configOk = true;
     save_config_to_memory();
+
+    collectAndWriteLog(VALIDATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
+
     set_mode(OPERATING_MODE);
     print_text(0, 35, String("Restarting to operationg mode.."));
     display.update();
@@ -1182,9 +1204,10 @@ void run_operating_mode(bool _skip_sleep_hours_check) {
             delay(100); // too fast display powerDown displays blank (white)??
             dbgPrintln("End weather_request");
         }
-    }  
 
-    collectAndWriteLog(OPERATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
+        collectAndWriteLog(OPERATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
+    } 
+    
     // deep sleep stuff
     enable_timed_sleep(SLEEP_INTERVAL_MIN);
     begin_deep_sleep();
