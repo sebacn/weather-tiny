@@ -12,6 +12,7 @@
 #define OPERATING_MODE 3
 
 extern String dbgPrintln(String _str);
+extern String infoPrintln(String _str);
 
 // Server certificate in PEM format, placed in the program (flash) memory to save RAM
 constexpr char const *ROOT_CA_INFLUXDB = ROOT_CA_POSITIONSTACK;
@@ -141,7 +142,7 @@ void writeLogInfo(){
     // Check server connection
     if (client.validateConnection()) 
     {
-        dbgPrintln("InfluxDBClient Connected OK to: " + client.getServerUrl());
+        infoPrintln("InfluxDBClient Connected OK to: " + client.getServerUrl());
 
         client.setWriteOptions(WriteOptions().useServerTimestamp(logInfo.UTCTimestamp == 0).writePrecision(WritePrecision::S));
 
@@ -152,18 +153,17 @@ void writeLogInfo(){
                 dbgPrintln("InfluxDBClient flushBuffer"); //Write all remaining points to db
                 client.flushBuffer();
             }
-            dbgPrintln("InfluxDBClient write OK");            
+            infoPrintln("InfluxDBClient write OK");            
         }
         else
         {
-            dbgPrintln("InfluxDBClient write failed: " + client.getLastErrorMessage());
+            infoPrintln("InfluxDBClient write failed: " + client.getLastErrorMessage());
         }
     } 
     else 
     {
-        dbgPrintln("InfluxDB connection failed: " + client.getLastErrorMessage());
+        infoPrintln("InfluxDB connection failed: " + client.getLastErrorMessage());
     }
 }
-
 
 #endif

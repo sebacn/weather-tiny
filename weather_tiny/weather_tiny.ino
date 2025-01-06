@@ -153,6 +153,7 @@ void print_pt()
   uint32_t free_sketch_space = ESP.getFreeSketchSpace();
 
   Serial.println("");
+  infoPrintln("Build date time: " + String(__DATE__) + " " + __TIME__);
   infoPrintln("Sketch size: " + String(program_size));
   infoPrintln("Free sketch space: " + String(free_sketch_space));
   infoPrintln("Flash chip size: " + String(free_size));
@@ -1226,7 +1227,7 @@ void run_operating_mode(bool _skip_sleep_hours_check) {
             update_weather_view(view, is_weather_fetched);
             update_air_quality_view(view, is_aq_fetched);
                 
-            dbgPrintln("\nUpdate display.");
+            dbgPrintln("Update display.");
             display_header(view);
             display_weather(view);
             display_air_quality(view);

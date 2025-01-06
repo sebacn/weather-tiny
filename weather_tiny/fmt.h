@@ -6,6 +6,8 @@
 #include "i18n.h"
 #include <Arduino.h>
 
+extern String dbgPrintln(String _str);
+
 String capitalize(String str) {
     String first_letter = str.substring(0, 1);
     first_letter.toUpperCase();
@@ -47,8 +49,11 @@ String fmt_2f1(float f) {
 
 String header_datetime(time_t* dt, bool updated) {
     struct tm *t = localtime(dt);
-    Serial.println(t, "%a %b %d %Y   %H:%M:%S"); 
-    Serial.println("Year: " + String(t->tm_year));
+    
+    char buffer[50];
+    strftime(buffer, sizeof(buffer), "%A, %B %d %Y %H:%M:%S", t);
+    dbgPrintln("header_datetime: " + String(buffer)); 
+
     char date[9+1];  // last char is '\0'
     sprintf(date, "%02u.%02u.%04u", /*get_weekday(t->tm_wday),*/ t->tm_mday, t->tm_mon+1, 1900 + t->tm_year);
     char curr_time[5+1];  // last char is '\0'

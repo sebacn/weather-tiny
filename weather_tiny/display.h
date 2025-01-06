@@ -33,6 +33,7 @@ GxEPD_Class display(io, ELINK_RESET, ELINK_BUSY);
 #define SCREEN_HEIGHT  122
 
 int get_battery_percent(int adc_value);
+extern String infoPrintln(String _str);
 
 struct WindArrow {
     int x = 0, y = 0;
@@ -48,7 +49,7 @@ struct WindArrow {
 
     void rotate(int alpha) {
         float rad = alpha * deg2rad;
-        Serial.printf("WindArrow rotate by %d deg (%.2f rad)\n", alpha, rad);
+        infoPrintln("WindArrow rotate by " + String(alpha) + " deg ("+ String(rad) + " rad)");
         _rotate_point(rad, &x0, &y0);
         _rotate_point(rad, &x1, &y1);
         _rotate_point(rad, &x2, &y2);
