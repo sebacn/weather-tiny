@@ -80,9 +80,14 @@ struct TimeZoneDbRequest: Request {
 
 struct AirQualityResponse {
     int pm25;
+    int pm10;
+    float no2; 
+    float o3;
+    float so2;
+    float co;
     
     void print() {
-        dbgPrintln("Air quality (PM2.5): " + String(pm25));
+        dbgPrintln("Air quality (PM2.5): " + String(pm25) + ", PM10: " + String(pm10) + ", NO2: " + String(no2) + ", O3: " + String(o3) + ", SO2: " + String(so2) + ", CO: " + String(co));
         dbgPrintln("");
     }
 } ;

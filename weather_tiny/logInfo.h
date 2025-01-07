@@ -5,6 +5,8 @@
 #include <ArduinoJson.h>
 #include <InfluxDbClient.h>
 #include "ca_cert.h"
+//#include "view.h"
+#include "api_request.h"
 
 #define NOT_SET_MODE 0
 #define CONFIG_MODE 1
@@ -13,6 +15,10 @@
 
 extern String dbgPrintln(String _str);
 extern String infoPrintln(String _str);
+//extern View view;
+extern WeatherRequest weather_request;
+extern AirQualityRequest airquality_request;
+extern GeocodingNominatimRequest location_request;
 
 // Server certificate in PEM format, placed in the program (flash) memory to save RAM
 constexpr char const *ROOT_CA_INFLUXDB = ROOT_CA_POSITIONSTACK;
@@ -121,21 +127,42 @@ void writeLogInfo(){
     client.setConnectionParams(logSettings.INFLUXDB_URL, logSettings.INFLUXDB_ORG, logSettings.INFLUXDB_BUCKET, logSettings.INFLUXDB_TOKEN, ROOT_CA_INFLUXDB, MTLS_CERT, MTLS_PKEY);
 
     Point pointDevice("ttgo-t5-2.13-weather");
-    pointDevice.addTag("ModeTag", logInfo.mode2String());
-    pointDevice.addTag("ConfigOkTag", String(logInfo.ConfigOk));
-    pointDevice.addTag("TimeFetchOk", String(logInfo.TimeFetchOk));
-    pointDevice.addTag("WeatherFetchOk", String(logInfo.WeatherFetchOk));
-    pointDevice.addTag("AQIFetchOk", String(logInfo.AQIFetchOk));
+    pointDevice.addTag("Mode", logInfo.mode2String());
+    pointDevice.addTag("Config_Ok", String(logInfo.ConfigOk));
+    pointDevice.addTag("Time_OK", String(logInfo.TimeFetchOk));
+    pointDevice.addTag("OWM_Ok", String(logInfo.WeatherFetchOk));
+    pointDevice.addTag("AQI_OK", String(logInfo.AQIFetchOk));
 
-    //pointDevice.addField("Timestamp", logInfo.Timestamp);
     dbgPrintln("InfluxDBClient UTCTimestamp (s): " + String(logInfo.UTCTimestamp));
     if (logInfo.UTCTimestamp > 0)
     {        
         pointDevice.setTime(logInfo.UTCTimestamp); //Unix timestamp WritePrecision::S
     }
     
-    pointDevice.addField("BootCount", logInfo.BootCount);
-    pointDevice.addField("BatteryPct", logInfo.BatteryPct);
+    pointDevice.addField("DEV_BootCnt", logInfo.BootCount);
+    pointDevice.addField("DEV_BatteryPct", logInfo.BatteryPct);
+
+    if (logInfo.WeatherFetchOk)
+    {
+        pointDevice.addField("OWM_TempC", weather_request.hourly[0].temp);
+        pointDevice.addField("OWM_TempFeelC", weather_request.hourly[0].feel_t); 
+        pointDevice.addField("OWM_Pressure", weather_request.hourly[0].pressure); 
+        pointDevice.addField("OWM_WindBft", weather_request.hourly[0].wind_bft); 
+        pointDevice.addField("OWM_WindDeg", weather_request.hourly[0].wind_deg); 
+        pointDevice.addField("OWM_Rain", weather_request.rain[0].rain); 
+        pointDevice.addField("OWM_Snow", weather_request.rain[0].snow); 
+        pointDevice.addField("OWM_RainPOP", weather_request.rain[0].pop); 
+    }
+
+    if (logInfo.AQIFetchOk)
+    {
+        pointDevice.addField("AQI_PM25", airquality_request.response.pm25); 
+        pointDevice.addField("AQI_PM10", airquality_request.response.pm10); 
+        pointDevice.addField("AQI_NO2", airquality_request.response.no2); 
+        pointDevice.addField("AQI_O3", airquality_request.response.o3);
+        pointDevice.addField("AQI_SO2", airquality_request.response.so2);
+        pointDevice.addField("AQI_CO", airquality_request.response.co);
+    }
 
     client.setInsecure(false);
 

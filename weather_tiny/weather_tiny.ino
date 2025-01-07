@@ -394,6 +394,29 @@ bool air_quality_handler(WiFiClient& resp_stream, Request request) {
     } else if (api_resp["data"]["forecast"]["daily"]["pm25"][0]["max"].is<int>()) {
         airquality_request.response.pm25 = api_resp["data"]["forecast"]["daily"]["pm25"][0]["max"].as<int>();
     }
+
+    if (api_resp["data"]["iaqi"]["pm10"]["v"].is<int>()) {
+        airquality_request.response.pm10 = api_resp["data"]["iaqi"]["pm10"]["v"].as<int>();
+    } else if (api_resp["data"]["forecast"]["daily"]["pm10"][0]["max"].is<int>()) {
+        airquality_request.response.pm10 = api_resp["data"]["forecast"]["daily"]["pm10"][0]["max"].as<int>();
+    }
+    
+    if (api_resp["data"]["iaqi"]["no2"]["v"].is<float>()) {
+        airquality_request.response.no2 = api_resp["data"]["iaqi"]["no2"]["v"].as<float>();
+    }
+
+    if (api_resp["data"]["iaqi"]["o3"]["v"].is<float>()) {
+        airquality_request.response.o3 = api_resp["data"]["iaqi"]["o3"]["v"].as<float>();
+    }
+
+    if (api_resp["data"]["iaqi"]["so2"]["v"].is<float>()) {
+        airquality_request.response.so2 = api_resp["data"]["iaqi"]["so2"]["v"].as<float>();
+    }
+
+    if (api_resp["data"]["iaqi"]["co"]["v"].is<float>()) {
+        airquality_request.response.co = api_resp["data"]["iaqi"]["co"]["v"].as<float>();
+    }
+
 /*
     if (api_resp["data"]["iaqi"].containsKey("pm25")) {
         airquality_request.response.pm25 = api_resp["data"]["iaqi"]["pm25"]["v"].as<int>();
