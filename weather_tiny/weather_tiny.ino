@@ -622,34 +622,39 @@ void enable_timed_sleep(int interval_minutes) {
         newTime = newTime + TimeSpan(0, 0, 0, 15); // add 15 sec to not wakeUp before expected min
     }
 
-    //check wakeupHour and sleepHour
-    if (newTime.minute() > 0)
-    {  
-        if (wakeupHour > sleepHour)
+    if ((wakeupHour > 0 || sleepHour > 0) && wakeupHour < 24 && sleepHour < 24) // sleep/wake hours must be in range 0-23
+    {
+        int addHrs = 0;
+        int loopCnt = 0;
+        for (int idx = sleepHour; idx != wakeupHour; idx++)
         {
-            if (newTime.hour() >= sleepHour && newTime.hour() < wakeupHour)
+            if (idx == 24)
+            {
+                idx = 0;
+            }
+
+            if (addHrs > 0 
+            || (newTime.hour() == idx && idx == sleepHour && newTime.minute() > 0) //for sleep hour start counting when minutes > 0
+            || (newTime.hour() == idx && idx != sleepHour ) ) 
             {                
-                newTime = newTime - TimeSpan(0, 0, newTime.minute(), 0); // set time to xx.00
-                newTime = newTime + TimeSpan(0, wakeupHour - newTime.hour(), 0, 0); // add sleep hours
+                addHrs++;        
+            } 
+
+            loopCnt++;
+            if (loopCnt > 25) //exit loop
+            {
+                addHrs = 0;
+                break;
             }
         }
-        else
-        {
-            if (newTime.hour() >= sleepHour || newTime.hour() < wakeupHour)
-            {                
-                newTime = newTime - TimeSpan(0, 0, newTime.minute(), 0); // set time to xx.00
-                if (newTime.hour() >= sleepHour)
-                {
-                    newTime = newTime + TimeSpan(0, 24 - newTime.hour() + wakeupHour, 0, 0); // add sleep hours
-                }
-                else
-                {
-                    newTime = newTime + TimeSpan(0, wakeupHour - newTime.hour(), 0, 0); // add sleep hours
-                }                
-            }
-        }  
-    }
 
+        if (addHrs > 0) 
+        {
+            newTime = newTime + TimeSpan(0, addHrs, 0, 0); // add sleep hours
+            newTime = newTime - TimeSpan(0, 0, newTime.minute(), 0); // reset minutes to 0    
+        }
+    }
+   
     TimeSpan ts = (newTime - curTime);
     int sleep_time_seconds = ts.totalseconds();
     
@@ -659,7 +664,8 @@ void enable_timed_sleep(int interval_minutes) {
     sprintf(buffer, "%d hours, %d minutes and %d seconds (total sec: %d)\n", ts.hours(), ts.minutes(), ts.seconds(), sleep_time_seconds);
     infoPrintln("DateTime Sleep for " + String(buffer));
 
-    long sleep_time_micro_sec = sleep_time_seconds * 1000 * 1000;
+    uint64_t sleep_time_micro_sec = sleep_time_seconds;
+    sleep_time_micro_sec = sleep_time_micro_sec * 1000 * 1000;
 
     esp_sleep_enable_timer_wakeup(sleep_time_micro_sec);
 }
