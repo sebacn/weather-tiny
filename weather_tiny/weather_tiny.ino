@@ -1045,9 +1045,14 @@ void run_validating_mode() {
           keyErrMsg += ",SLEEP_INTERVAL_MIN";
         }
 
-        if (sleepHour > 23)
+        if (sleepHour > 23 || sleepHour < 0)
         {
           keyErrMsg += "SleepHour";
+        }
+
+        if (wakeupHour > 23 || wakeupHour < 0)
+        {
+          keyErrMsg += "WakeUpHour";
         }
 
         dbgPrintln("Validate key, missing keys: " + (keyErrMsg == ""? "No" : keyErrMsg));
