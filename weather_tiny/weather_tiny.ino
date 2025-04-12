@@ -496,7 +496,7 @@ bool http_request_data(WiFiClientSecure& client, Request request, unsigned int r
                 ret_val = false;
             }
         } else {
-            infoPrintln("HTTP connection failed " + String(http_code) + ", error: " + http.errorToString(http_code)); // String(http_code).c_str(), http.errorToString(http_code).c_str());
+            infoPrintln("HTTP connection failed " + String(http_code) + ", error: " + http.errorToString(http_code) + ", path: " + request.path); // String(http_code).c_str(), http.errorToString(http_code).c_str());
             ret_val = false;
         }
         client.stop();

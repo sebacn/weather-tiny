@@ -273,7 +273,7 @@ struct WeatherRequest: Request {
     explicit WeatherRequest(const Request& request): Request(request) { }
 
     void make_path(Location& location) {
-        this->path = "/data/2.5/onecall?lat="+String(location.lat)
+        this->path = "/data/3.0/onecall?lat="+String(location.lat)
             +"&lon="+String(location.lon)
             +"&exclude=minutely,alerts"
             +"&appid="+api_key
