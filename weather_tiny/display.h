@@ -8,8 +8,8 @@
 #include <GxDEPG0213BN/GxDEPG0213BN.h>
 
 #include "view.h"
-#include "fonts/Monofonto6pt7b.h"
-#include "fonts/Monofonto8pt7b.h"
+#include "fonts/monofonto6pt7b.h"
+#include "fonts/monofonto8pt7b.h"
 #include "fonts/Monofonto10pt.h"
 #include "fonts/Monofonto12pt.h"
 #include "fonts/Monofonto18pt.h"
