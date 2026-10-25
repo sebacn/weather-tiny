@@ -16,6 +16,7 @@
 #define ARDUINOJSON_USE_DOUBLE 1
 
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <time.h>
@@ -53,6 +54,9 @@ ApiKeys apiKeys;
 #include "display.h"
 #include "view.h"
 #include "loginfo.h"
+
+String mqttCity;
+#include "mqtt_ha.h"
 
 /*
 Replace in the sdkconfig.h
@@ -174,20 +178,96 @@ String infoPrintln(String _str) {
     return _str + '\n';
 }
 
-void collectAndWriteLog(int mode, bool is_time_fetched, bool is_weather_fetched, bool is_aq_fetched)
+void updateLogInfo(int mode, bool is_time_fetched, bool is_weather_fetched, bool is_aq_fetched)
 {
-    dbgPrintln("InfluxDBClient: collectAndWriteLog");
-
+    int adc = analogRead(ADC_PIN);
     logInfo.Mode = mode;
     logInfo.ConfigOk = configOk;
     logInfo.BootCount = boot_count;
-    logInfo.UTCTimestamp = is_time_fetched? (datetime_request.response.dt - datetime_request.response.gmt_offset) : 0;
-    logInfo.BatteryPct = get_battery_percent(analogRead(ADC_PIN));
+    logInfo.UTCTimestamp = is_time_fetched ? (datetime_request.response.dt - datetime_request.response.gmt_offset) : 0;
+    logInfo.BatteryVoltage = adc / 4095.0f * 7.5f;
+    logInfo.BatteryPct = get_battery_percent(adc);
     logInfo.TimeFetchOk = is_time_fetched;
     logInfo.WeatherFetchOk = is_weather_fetched;
     logInfo.AQIFetchOk = is_aq_fetched;
+}
 
-    writeLogInfo();
+void fillWeatherDocument(JsonDocument& doc) {
+    doc["lat"] = location[curr_loc].lat;
+    doc["lon"] = location[curr_loc].lon;
+    doc["units"] = "M";
+
+    JsonObject current = doc["current"].to<JsonObject>();
+    const WeatherResponseHourly& h = weather_request.hourly[0];
+    current["dt"] = h.date_ts;
+    current["temp"] = h.temp;
+    current["feels_like"] = h.feel_t;
+    current["pressure"] = h.pressure;
+    current["wind_bft"] = h.wind_bft;
+    current["wind_deg"] = h.wind_deg;
+    current["clouds"] = h.clouds;
+    current["description"] = h.descr;
+    current["icon"] = h.icon;
+    current["sunrise"] = h.sunr_ts;
+    current["sunset"] = h.suns_ts;
+    current["high"] = h.max_t;
+    current["low"] = h.min_t;
+    current["pop"] = h.pop;
+    current["rain"] = h.rain;
+    current["snow"] = h.snow;
+
+    JsonObject air = doc["air"].to<JsonObject>();
+    air["pm2_5"] = airquality_request.response.pm25;
+    air["pm10"] = airquality_request.response.pm10;
+    air["co"] = airquality_request.response.co;
+    air["no2"] = airquality_request.response.no2;
+    air["o3"] = airquality_request.response.o3;
+    air["so2"] = airquality_request.response.so2;
+
+    JsonArray forecast = doc["forecast"].to<JsonArray>();
+    for (int i = 0; i < 2; i++) {
+        if (!weather_request.daily[i].date_ts) continue;
+        JsonObject slot = forecast.add<JsonObject>();
+        slot["dt"] = weather_request.daily[i].date_ts;
+        slot["temp_min"] = weather_request.daily[i].min_t;
+        slot["temp_max"] = weather_request.daily[i].max_t;
+        slot["wind_bft"] = weather_request.daily[i].wind_bft;
+        slot["wind_deg"] = weather_request.daily[i].wind_deg;
+        slot["pop"] = weather_request.daily[i].pop;
+        slot["rain"] = weather_request.daily[i].rain;
+        slot["snow"] = weather_request.daily[i].snow;
+    }
+
+    JsonArray hourly = doc["hourly"].to<JsonArray>();
+    for (int i = 0; i < 5; i++) {
+        if (!weather_request.rain[i].date_ts) continue;
+        JsonObject slot = hourly.add<JsonObject>();
+        slot["dt"] = weather_request.rain[i].date_ts;
+        slot["pop"] = weather_request.rain[i].pop;
+        slot["rain"] = weather_request.rain[i].rain;
+        slot["snow"] = weather_request.rain[i].snow;
+        slot["feels_like"] = weather_request.rain[i].feel_t;
+        slot["icon"] = weather_request.rain[i].icon;
+    }
+}
+
+void publishWeatherMqtt() {
+    if (!mqttSettings.HaHost.length()) {
+        dbgPrintln("MQTT skipped, home_assistant_server_host is empty");
+        return;
+    }
+    mqttCity = location[curr_loc].name;
+    String body;
+    {
+        JsonDocument doc;
+        fillWeatherDocument(doc);
+        JsonObject device = doc["device"].to<JsonObject>();
+        device["wake_count"] = logInfo.BootCount;
+        device["battery_pct"] = logInfo.BatteryPct;
+        device["battery_voltage"] = logInfo.BatteryVoltage;
+        serializeJson(doc, body);
+    }
+    mqttPublishWeather(body);
 }
 
 //callback notifying us of the need to save config
@@ -758,15 +838,12 @@ void read_config_from_memory() {
     wakeupHour = preferences.getInt("WakeupHour", 7);
     sleepHour = preferences.getInt("SleepHour", 23);
 
-    logSettings.INFLUXDB_URL = preferences.getString("INFLUXDB_URL");
-    logSettings.INFLUXDB_BUCKET = preferences.getString("INFLUXDB_BUCKET");
-    logSettings.INFLUXDB_ORG = preferences.getString("INFLUXDB_ORG");
-    logSettings.INFLUXDB_TOKEN = preferences.getString("INFLUXDB_TOKEN");
-
-    dbgPrintln("INFLUXDB_URL: " + logSettings.INFLUXDB_URL);
-    dbgPrintln("INFLUXDB_BUCKET: " + logSettings.INFLUXDB_BUCKET);
-    dbgPrintln("INFLUXDB_ORG: " + logSettings.INFLUXDB_ORG);
-    dbgPrintln("INFLUXDB_TOKEN: " + logSettings.INFLUXDB_TOKEN);
+    mqttSettings.HaHost = preferences.getString("HaHost", "");
+    mqttSettings.CfAccessId = preferences.getString("CfAccessId", "");
+    mqttSettings.CfAccessSecret = preferences.getString("CfAccessSecret", "");
+    mqttSettings.MqttUser = preferences.getString("MqttUser", "");
+    mqttSettings.MqttPass = preferences.getString("MqttPass", "");
+    mqttSettings.print();
     dbgPrintln("SLEEP_INTERVAL_MIN: " + String(SLEEP_INTERVAL_MIN));
     dbgPrintln("wakeupHour: " + String(wakeupHour));
     dbgPrintln("sleepHour: " + String(sleepHour));
@@ -822,15 +899,12 @@ void save_config_to_memory() {
     preferences.putInt("WakeupHour", wakeupHour);
     preferences.putInt("SleepHour", sleepHour);
 
-    preferences.putString("INFLUXDB_URL", logSettings.INFLUXDB_URL);
-    preferences.putString("INFLUXDB_BUCKET", logSettings.INFLUXDB_BUCKET);
-    preferences.putString("INFLUXDB_ORG", logSettings.INFLUXDB_ORG);
-    preferences.putString("INFLUXDB_TOKEN", logSettings.INFLUXDB_TOKEN);
-
-    dbgPrintln("INFLUXDB_URL: " + logSettings.INFLUXDB_URL);
-    dbgPrintln("INFLUXDB_BUCKET: " + logSettings.INFLUXDB_BUCKET);
-    dbgPrintln("INFLUXDB_ORG: " + logSettings.INFLUXDB_ORG);
-    dbgPrintln("INFLUXDB_TOKEN: " + logSettings.INFLUXDB_TOKEN);
+    preferences.putString("HaHost", mqttSettings.HaHost);
+    preferences.putString("CfAccessId", mqttSettings.CfAccessId);
+    preferences.putString("CfAccessSecret", mqttSettings.CfAccessSecret);
+    preferences.putString("MqttUser", mqttSettings.MqttUser);
+    preferences.putString("MqttPass", mqttSettings.MqttPass);
+    mqttSettings.print();
     dbgPrintln("SLEEP_INTERVAL_MIN: " + String(SLEEP_INTERVAL_MIN));
     dbgPrintln("wakeupHour: " + String(wakeupHour));
     dbgPrintln("sleepHour: " + String(sleepHour));
@@ -895,10 +969,12 @@ void run_config_server() {
     WiFiManagerParameter parmWakeupHour("parmWakeupHour", "Wakeup hour", String(wakeupHour).c_str(), 10);
     WiFiManagerParameter parmSleepHour("parmSleepHour", "Sleep hour", String(sleepHour).c_str(), 10);
 
-    WiFiManagerParameter parmINFLUXDB_URL("parmINFLUXDB_URL", "Log INFLUXDB_URL", logSettings.INFLUXDB_URL.c_str(), 50);
-    WiFiManagerParameter parmINFLUXDB_BUCKET("parmINFLUXDB_BUCKET", "Log INFLUXDB_BUCKET", logSettings.INFLUXDB_BUCKET.c_str(), 50);
-    WiFiManagerParameter parmINFLUXDB_ORG("parmINFLUXDB_ORG", "Log INFLUXDB_ORG", logSettings.INFLUXDB_ORG.c_str(), 50);
-    WiFiManagerParameter parmINFLUXDB_TOKEN("parmINFLUXDB_TOKEN", "LogINFLUXDB_TOKEN", logSettings.INFLUXDB_TOKEN.c_str(), 100);
+    WiFiManagerParameter parmMqttNote("<p><b>Home Assistant MQTT over WebSocket TLS</b><br/>Cloudflare Access headers are sent on the WebSocket handshake. Host may be hostname or hostname/path. The path defaults to /mqtt.</p>");
+    WiFiManagerParameter parmHaHost("parmHaHost", "home_assistant_server_host", mqttSettings.HaHost.c_str(), 128, "placeholder=\"ha.example.com or ha.example.com/mqtt\"");
+    WiFiManagerParameter parmCfId("parmCfId", "CF-Access-Client-Id", mqttSettings.CfAccessId.c_str(), 128, "autocomplete=\"off\"");
+    WiFiManagerParameter parmCfSecret("parmCfSecret", "CF-Access-Client-Secret", mqttSettings.CfAccessSecret.c_str(), 256, "type=\"password\" autocomplete=\"off\"");
+    WiFiManagerParameter parmMqttUser("parmMqttUser", "mqtt-user", mqttSettings.MqttUser.c_str(), 64, "autocomplete=\"off\"");
+    WiFiManagerParameter parmMqttPass("parmMqttPass", "mqtt-password", mqttSettings.MqttPass.c_str(), 128, "type=\"password\" autocomplete=\"off\"");
 
     WiFiManager wm;
 
@@ -912,10 +988,12 @@ void run_config_server() {
     wm.addParameter(&parmWakeupHour);
     wm.addParameter(&parmSleepHour);
 
-    wm.addParameter(&parmINFLUXDB_URL);
-    wm.addParameter(&parmINFLUXDB_BUCKET);
-    wm.addParameter(&parmINFLUXDB_ORG);
-    wm.addParameter(&parmINFLUXDB_TOKEN);
+    wm.addParameter(&parmMqttNote);
+    wm.addParameter(&parmHaHost);
+    wm.addParameter(&parmCfId);
+    wm.addParameter(&parmCfSecret);
+    wm.addParameter(&parmMqttUser);
+    wm.addParameter(&parmMqttPass);
 
     //wm.setTimeout(120);
     wm.setConfigPortalTimeout(60*5); //5 min
@@ -933,7 +1011,6 @@ void run_config_server() {
         display.update();
         delay(2000);
 
-        //collectAndWriteLog(CONFIG_MODE, false, false, false);
         //dbgPrintln("Config: power off..");
 
         //long sleep_time_micro_sec = 24* 60 * 1000 * 1000 * 60; //24h
@@ -977,11 +1054,17 @@ void run_config_server() {
             wakeupHour = atoi(parmWakeupHour.getValue());
             sleepHour = atoi(parmSleepHour.getValue());
 
-            logSettings.INFLUXDB_URL = String(parmINFLUXDB_URL.getValue());
-            logSettings.INFLUXDB_BUCKET = String(parmINFLUXDB_BUCKET.getValue());
-            logSettings.INFLUXDB_ORG = String(parmINFLUXDB_ORG.getValue());
-            logSettings.INFLUXDB_TOKEN = String(parmINFLUXDB_TOKEN.getValue());
-            
+            mqttSettings.HaHost = String(parmHaHost.getValue());
+            mqttSettings.HaHost.trim();
+            mqttSettings.CfAccessId = String(parmCfId.getValue());
+            mqttSettings.CfAccessId.trim();
+            mqttSettings.CfAccessSecret = String(parmCfSecret.getValue());
+            mqttSettings.CfAccessSecret.trim();
+            mqttSettings.MqttUser = String(parmMqttUser.getValue());
+            mqttSettings.MqttUser.trim();
+            mqttSettings.MqttPass = String(parmMqttPass.getValue());
+            mqttSettings.MqttPass.trim();
+
             save_config_to_memory();
 
             configOk = false;
@@ -989,10 +1072,6 @@ void run_config_server() {
 
         if (configOk)
         {
-            if (connect_to_wifi()) 
-            {
-                collectAndWriteLog(CONFIG_MODE, false, false, false);
-            }
             set_mode(OPERATING_MODE);
             print_text(0, 35, String("Restarting to operationg mode.."));
             display.update();
@@ -1007,11 +1086,6 @@ void run_config_server() {
             print_text(0, 35, String("Restarting to validation mode.."));
             display.update();
         } 
-
-        if (connect_to_wifi()) 
-        {
-            collectAndWriteLog(CONFIG_MODE, false, false, false);
-        }
 
         delay(3000);
         ESP.restart();
@@ -1085,8 +1159,6 @@ void run_validating_mode() {
           display.setFont(&Cousine_Regular6pt7b);
           print_text(0, 45, "Key(s) is/are not configured:\n" + keyErrMsg + "\n" + "Restarting in 10 sec");
           display.update();
-
-          collectAndWriteLog(VALIDATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
 
           set_mode(CONFIG_MODE);
           delay(10000);
@@ -1170,8 +1242,6 @@ void run_validating_mode() {
           print_text(0, 45, "Validation failed:\n" + keyErrMsg);
           display.update();
 
-          collectAndWriteLog(VALIDATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
-
           set_mode(CONFIG_MODE);
           delay(15000);
           ESP.restart();
@@ -1186,7 +1256,6 @@ void run_validating_mode() {
       print_text(0, 45, "Wifi connection failed\nReboot to config...");
       display.update();
 
-      //collectAndWriteLog(VALIDATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
       set_mode(CONFIG_MODE);      
       delay(15000);
       ESP.restart();
@@ -1195,7 +1264,10 @@ void run_validating_mode() {
     configOk = true;
     save_config_to_memory();
 
-    collectAndWriteLog(VALIDATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
+    updateLogInfo(VALIDATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
+    if (is_weather_fetched && is_aq_fetched) {
+        publishWeatherMqtt();
+    }
 
     set_mode(OPERATING_MODE);
     print_text(0, 35, String("Restarting to operationg mode.."));
@@ -1271,7 +1343,10 @@ void run_operating_mode(bool _skip_sleep_hours_check) {
             dbgPrintln("End weather_request");
         }
 
-        collectAndWriteLog(OPERATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
+        updateLogInfo(OPERATING_MODE, is_time_fetched, is_weather_fetched, is_aq_fetched);
+        if (is_weather_fetched && is_aq_fetched) {
+            publishWeatherMqtt();
+        }
     } 
     
     // deep sleep stuff
