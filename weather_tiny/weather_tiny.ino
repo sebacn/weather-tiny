@@ -52,7 +52,7 @@ ApiKeys apiKeys;
 #include "api_request.h"
 #include "display.h"
 #include "view.h"
-#include "loginfo.h"
+#include "logInfo.h"
 
 /*
 Replace in the sdkconfig.h
